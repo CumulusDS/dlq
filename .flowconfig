@@ -1,0 +1,16 @@
+[ignore]
+<PROJECT_ROOT>/node_modules/config-chain/test/broken.json
+<PROJECT_ROOT>/node_modules/license-checker/tests/config/custom_format_broken.json
+<PROJECT_ROOT>/lib
+<PROJECT_ROOT>/var
+
+[include]
+
+[libs]
+
+[lints]
+all=error
+
+[options]
+
+[strict]
