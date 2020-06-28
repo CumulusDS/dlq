@@ -52,7 +52,9 @@
       }
     }
   },
-  "dependencies": {},
+  "dependencies": {
+    "aws-sdk": "^2.706.0"
+  },
   "devDependencies": {
     "@babel/cli": "^7.0.0",
     "@babel/core": "^7.7.4",
