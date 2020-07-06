@@ -1,26 +1,47 @@
-# Package Template
+# DQL
 
-This is a basic template for Cumulus library packages.
+CLI generator for operations on a Dead Letter Queue.
 
-You can use the template by cloning the template project from https://github.com/CumulusDS/package-template and unpacking into a new directory. Remember to update package.json, appveyor.yml and this documentation with the name and purpose of your new project. Create a new repo on GitHub for the new project. Connect your local repo to the new GitHub repo by changing the origin:
+## Usage
 
-1. Use the [package-template](https://github.com/CumulusDS/package-template) to create a GitHub repo for the new package.
-2. Configure standard secrets with the GitHub repo https://github.com/CumulusDS/REPOSITORY/settings/secrets
-    - `SLACK_WEBHOOK`
-    - `NODE_AUTH_TOKEN`
-3. Clone the new repo.
-    ```bash
-    git clone https://github.com/CumulusDS/sts-sites.git
-    ```
-4. Create the first feature branch in your local repo.
-5. Replace `PackageTemplate` and `Package Template` throughout the repo. Edit this file, `package.json` and `appveyor.yml` with the new service name.
-6. Push the feature branch. GitHub Actions should automatically build it.
-7. Change `"private": true"` in package.json; the "private" flag prevents publishing the package.
-7. Open the first pull request.
+### Show messages
+```
+npx -q dlq --region us-east-1 --stage ci-cd --function-name MyService-dev-aggregator
+```
 
-# Domain Distillation
+The command echos each JSON message on a separate line without removing from the queue.
 
-Please define your core domain here.
+### Redrive messages
+```
+npx -q dlq --region us-east-1 --stage ci-cd --function-name MyService-dev-aggregator --redrive
+```
+
+The command invokes the function with each message. Then the command deletes each re-driven message from the queue. The invocation is asynchronous, so if the message fails again, a new DLQ message is created by AWS Lambda.
+
+### Drain messages
+```
+npx -q dlq --region us-east-1 --stage ci-cd --function-name MyService-dev-aggregator --drain
+```
+
+The command echos each JSON message on a separate line and deletes it from the queue.
+
+## Installation
+
+Packages that define a Dead Letter Queue can create a CLI with customized defaults by adding a file to the scripts directory that uses this library. 
+
+To create a CLI tool, add a file to the scripts directory like this, for example "scripts/dlq.js":
+```js
+import dlq from "dlq";
+
+dlq({fun: "MyService-dev-aggregator"});
+```
+
+Add the new file the scripts section of package.json:
+```
+"scripts": {
+  "dlq": "babel-node scripts/dlq.js"
+}
+```
 
 # Development
 
@@ -31,4 +52,4 @@ Please define your core domain here.
 
 ## License
 
-This package is not licensed.
+This package is [MIT licensed](LICENSE).

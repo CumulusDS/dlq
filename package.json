@@ -1,13 +1,12 @@
 {
-  "name": "package-template",
+  "name": "@cumulusds/dlq",
   "version": "0.0.0",
   "description": "Scaffolding for an Library Package",
   "repository": "https://github.com/CumulusDS/package-template",
   "author": "Cumulus Digital Systems",
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "MIT",
   "engines": {
-    "node": "^10.15 || ^12.13 || ^13.8"
+    "node": "^10.15 || ^12.13 || ^13.8 || ^14.4"
   },
   "main": "lib/index.js",
   "src": [
@@ -20,13 +19,14 @@
     "build:flow-copy-source": "flow-copy-source --ignore test.js src lib",
     "build:license-checker": "license-checker --csv --out var/licenses.csv",
     "clean": "shx rm -rf lib",
+    "dlq": "bin/dlq.js",
     "git:push": "git push --follow-tags",
     "publish:patch": "run-s version:patch git:push",
     "publish:minor": "run-s version:minor git:push",
     "publish:major": "run-s version:major git:push",
     "sites": "node bin/sites.js",
     "test": "run-p --aggregate-output test:**",
-    "test:flow:coverage-report": "flow-coverage-report -i 'src/**/*.js' -x 'test/**/*.js' -t html -t text --threshold 95 --output-dir var/coverage/flow",
+    "test:flow:coverage-report": "flow-coverage-report -i 'src/**/*.js' -x 'test/**/*.js' -t html -t text --threshold 63 --output-dir var/coverage/flow",
     "test:flow:status": "flow status",
     "test:jest": "jest --color",
     "test:lint": "eslint *.js src test",
@@ -53,7 +53,8 @@
     }
   },
   "dependencies": {
-    "aws-sdk": "^2.706.0"
+    "aws-sdk": "^2.706.0",
+    "minimist": "^1.2.5"
   },
   "devDependencies": {
     "@babel/cli": "^7.0.0",
