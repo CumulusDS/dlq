@@ -1,6 +1,6 @@
 # DQL
 
-CLI generator for operations on a Dead Letter Queue.
+CLI tool to manipulate AWS Dead Letter Queues
 
 ## Usage
 
