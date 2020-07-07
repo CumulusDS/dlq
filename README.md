@@ -6,21 +6,21 @@ CLI tool to manipulate AWS Dead Letter Queues
 
 ### Show messages
 ```
-npx -q dlq --region us-east-1 --stage ci-cd --function-name MyService-dev-aggregator
+npx -q @cumulusds/dlq --region us-east-1 --function-name MyService-dev-aggregator
 ```
 
 The command echos each JSON message on a separate line without removing from the queue.
 
 ### Redrive messages
 ```
-npx -q dlq --region us-east-1 --stage ci-cd --function-name MyService-dev-aggregator --redrive
+npx -q @cumulusds/dlq --region us-east-1 --function-name MyService-dev-aggregator --redrive
 ```
 
 The command invokes the function with each message. Then the command deletes each re-driven message from the queue. The invocation is asynchronous, so if the message fails again, a new DLQ message is created by AWS Lambda.
 
 ### Drain messages
 ```
-npx -q dlq --region us-east-1 --stage ci-cd --function-name MyService-dev-aggregator --drain
+npx -q @cumulusds/dlq --region us-east-1 --function-name MyService-dev-aggregator --drain
 ```
 
 The command echos each JSON message on a separate line and deletes it from the queue.
