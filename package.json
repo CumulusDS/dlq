@@ -1,6 +1,6 @@
 {
   "name": "@cumulusds/dlq",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Scaffolding for an Library Package",
   "repository": "https://github.com/CumulusDS/package-template",
   "author": "Cumulus Digital Systems",
