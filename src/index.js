@@ -6,7 +6,7 @@ import AWS from "aws-sdk";
 
 function printHelp() {
   console.log(
-    "Download the Historian dead letters\n\n" +
+    "Download or reprocess Dead Letters for an AWS Lambda function\n\n" +
       "Options:\n" +
       "\t-d DRAIN, --drain (true|false) - Print and delete messages\n" +
       "\t-R REDRIVE, --redrive (true|false) - Print, redrive and delete messages\n" +
@@ -86,8 +86,7 @@ export default async function(options: Options) {
     const promises = [];
     while (messages != null && messages.length > 0) {
       promises.push(
-        // eslint-disable-next-line no-loop-func
-        messages.forEach(async message => {
+        ...messages.map(async message => {
           console.log(JSON.stringify(message, null, parseInt(space, 10)));
           if (redrive) {
             const result = await lambda
