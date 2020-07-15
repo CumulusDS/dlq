@@ -18,6 +18,21 @@ npx -q @cumulusds/dlq --region us-east-1 --function-name MyService-dev-aggregato
 
 The command invokes the function with each message. Then the command deletes each re-driven message from the queue. The invocation is asynchronous, so if the message fails again, a new DLQ message is created by AWS Lambda.
 
+To synchronously redrive message and collect status and logs, use the `--log PREFIX` option. A file will be created for each invocation. The filename is the prefix given by the `--log PREFIX` argument, appended with the messageID and ".log" file extension. The following command line will redrive Dead Letter Queue messages, collecting the messages (stdout) and invocation logs:
+```shell script
+npx -q @cumulusds/dlq --region us-east-2 --function-name MyService-prod-aggregator --redrive --log var/MyService-prod-aggregator/us-east-2/2020-07-15-E- > var/StsHistorian-prod-workCompletionMessageReceived/us-east-2/2020-07-15-E.json
+```
+
+The first line of the log file shows the message ID. The second line shows either "Success" or the Function Error. The third line gives the response payload (if any). The remainder of the log file gives the final 4KB of CloudWatch logs emitted by the handler. Here is an example log file `var/MyService-prod-aggregator/us-east-2/2020-07-15-E-1e1474a1-5e1d-4faf-bc85-c3a1cf04defa.log`:
+```text
+1e1474a1-5e1d-4faf-bc85-c3a1cf04defa
+Unhandled
+{"errorType":"ConditionalCheckFailedException","errorMessage":"The conditional request failed","trace":[...]}
+CONFLICT
+REPORT RequestId: cc403fbe-86ec-4768-9036-b3859648d479	Duration: 1020.00 ms	Billed Duration: 1100 ms	Memory Size: 128 MB	Max Memory Used: 115 MB	
+XRAY TraceId: 1-5f0f6b9f-88681def73d028a27d8e29bb	Segment
+```
+
 ### Drain messages
 ```
 npx -q @cumulusds/dlq --region us-east-1 --function-name MyService-dev-aggregator --drain
