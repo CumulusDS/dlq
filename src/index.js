@@ -3,25 +3,30 @@
 
 import parseArgs from "minimist";
 import AWS from "aws-sdk";
+import { promises as fs } from "fs";
 
 function printHelp() {
   console.log(
     "Download or reprocess Dead Letters for an AWS Lambda function\n\n" +
       "Options:\n" +
-      "\t-d DRAIN, --drain (true|false) - Print and delete messages\n" +
-      "\t-R REDRIVE, --redrive (true|false) - Print, redrive and delete messages\n" +
+      "\t-d, --drain              - Print and delete messages\n" +
+      "\t-R, --redrive            - Print, redrive and delete messages\n" +
+      "\t-l PREFIX, --log PREFIX  - Log redrive output to files with the given prefix\n" +
       "\t-S SPACE, --space NUMBER - Pretty print with N spaces\n" +
       "\n" +
-      "\t-r REGION, --region STRING - Specify the AWS region to address\n" +
+      "\t-r REGION, --region STRING          - Specify the AWS region to address\n" +
       "\t-f FUNCTION, --function-name STRING - The name of the Lambda function, version, or alias\n" +
       "\n" +
       "\t-h, --help - Print this message.\n" +
       "\n" +
       "\n" +
-      "\tMessages will be printed as concatenated JSON. Each message is one line, unless the --space option is given.\n" +
+      "\tThe application prints dead letter messages as concatenated JSON. Each message is one line, unless the --space option is given.\n" +
+      "\tUse the --log option with --redrive to use synchronous invocation when redriving the DLQ messages.\n" +
+      "\tLogs from failed redrive attempts are written to files with the given prefix.\n" +
       "\tNote that --redrive can get stuck in an infinite loop, endlessly redriving, if the events are failing.\n" +
+      "\n" +
       "\tExample:\n" +
-      "\t$awsudo -u sts-prod yarn --silent dlq --region us-east-2 --function-name StsHistorian-prod-workCompletionMessageReceived --redrive\n"
+      "\t$awsudo -u sts-prod yarn --silent dlq --region us-east-2 --function-name MyService-prod-myFunction --redrive\n"
   );
 }
 
@@ -51,7 +56,8 @@ export type Options = {
   drain?: boolean,
   redrive?: boolean,
   fun?: string,
-  space?: string
+  space?: string,
+  log?: string
 };
 
 export default async function(options: Options) {
@@ -63,6 +69,7 @@ export default async function(options: Options) {
         redrive: ["R"],
         fun: ["f", "function-name"],
         space: ["S"],
+        log: ["l"],
         help: ["h"]
       },
       boolean: ["drain", "redrive"]
@@ -73,7 +80,8 @@ export default async function(options: Options) {
     const redrive = args.redrive ?? options.redrive ?? false;
     const FunctionName = args.fun ?? options.fun;
     const space = args.space ?? options.space ?? "0";
-    if (args.help || typeof region !== "string" || typeof FunctionName !== "string") {
+    const log = args.log ?? options.log;
+    if (args.help || typeof region !== "string" || typeof FunctionName !== "string" || typeof log === "boolean") {
       printHelp();
       process.exit(1);
       return;
@@ -89,10 +97,26 @@ export default async function(options: Options) {
         ...messages.map(async message => {
           console.log(JSON.stringify(message, null, parseInt(space, 10)));
           if (redrive) {
+            const InvocationType = log == null ? "Event" : "RequestResponse";
+            const LogType = log == null ? "None" : "Tail";
             const result = await lambda
-              .invoke({ FunctionName, InvocationType: "Event", Payload: message.Body })
+              .invoke({ FunctionName, InvocationType, LogType, Payload: message.Body })
               .promise();
-            if (result.StatusCode < 300) {
+            if (result.StatusCode === 200) {
+              await fs.writeFile(
+                `${log}${message.MessageId}.log`,
+                Buffer.concat([
+                  Buffer.from(
+                    `${message.MessageId}\n${result.FunctionError ?? "Success"}\n${result.Payload ?? ""}\n`,
+                    "utf-8"
+                  ),
+                  Buffer.from(result.LogResult, "base64")
+                ])
+              );
+              if (result.FunctionError == null) {
+                await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+              }
+            } else if (result.StatusCode === 202) {
               await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
             } else {
               console.error(result);

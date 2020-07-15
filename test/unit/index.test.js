@@ -2,14 +2,17 @@
 
 import minimist from "minimist";
 import AWS from "aws-sdk";
+import { promises as fs } from "fs";
 import main from "../../src";
 
 jest.mock("minimist");
+jest.mock("fs", () => ({ promises: { writeFile: jest.fn().mockResolvedValue() } }));
 
 jest.mock("aws-sdk", () => {
   const deleteMessage = jest.fn(() => ({ promise: jest.fn() }));
+  const invoke = jest.fn(() => ({ promise: jest.fn().mockResolvedValue({ StatusCode: 202 }) }));
   const Lambda = jest.fn(() => ({
-    invoke: jest.fn(() => ({ promise: jest.fn().mockResolvedValue({ StatusCode: 200 }) })),
+    invoke,
     getFunction: jest.fn(() => ({
       promise: jest.fn().mockResolvedValue({
         Configuration: {
@@ -21,7 +24,7 @@ jest.mock("aws-sdk", () => {
   const SQS = jest.fn(() => {
     const receiveMessagePromise = jest
       .fn()
-      .mockResolvedValueOnce({ Messages: [{ ReceiptHandle: "receipt-handle" }] })
+      .mockResolvedValueOnce({ Messages: [{ ReceiptHandle: "receipt-handle", MessageId: "123" }] })
       // $FlowFixMe
       .mockResolvedValueOnce({});
     return {
@@ -78,6 +81,17 @@ describe("main", () => {
         minimist.mockImplementation(() => ({ region, fun, redrive: true }));
       });
 
+      it("invokes asynchronously", async () => {
+        await main({});
+        const lambda = new AWS.Lambda();
+        expect(lambda.invoke).toBeCalledWith({
+          FunctionName: "service-stage-function",
+          InvocationType: "Event",
+          LogType: "None",
+          Payload: undefined
+        });
+      });
+
       it("deletes message", async () => {
         await main({});
         const sqs = new AWS.SQS();
@@ -102,6 +116,60 @@ describe("main", () => {
           await main({});
           const sqs = new AWS.SQS();
           expect(sqs.deleteMessage).not.toBeCalled();
+        });
+      });
+
+      describe("log", () => {
+        beforeEach(() => {
+          // $FlowFixMe
+          minimist.mockImplementation(() => ({ region, fun, redrive: true, log: "prefix-" }));
+
+          AWS.Lambda = jest.fn(() => ({
+            invoke: jest.fn(() => ({ promise: jest.fn().mockResolvedValue({ StatusCode: 200, LogResult: "LOGGED" }) })),
+            getFunction: jest.fn(() => ({
+              promise: jest.fn().mockResolvedValue({
+                Configuration: {
+                  DeadLetterConfig: { TargetArn: "target-arn" }
+                }
+              })
+            }))
+          }));
+        });
+
+        it("writes a log file", async () => {
+          await main({});
+          expect(fs.writeFile).toBeCalledWith("prefix-123.log", expect.any(Object));
+        });
+
+        it("deletes message", async () => {
+          await main({});
+          const sqs = new AWS.SQS();
+          expect(sqs.deleteMessage).toBeCalledWith({ QueueUrl: "queue", ReceiptHandle: "receipt-handle" });
+        });
+
+        describe("with Function Error", () => {
+          beforeEach(() => {
+            AWS.Lambda = jest.fn(() => ({
+              invoke: jest.fn(() => ({
+                promise: jest
+                  .fn()
+                  .mockResolvedValue({ StatusCode: 200, LogResult: "LOGGED", FunctionError: "Unhandled" })
+              })),
+              getFunction: jest.fn(() => ({
+                promise: jest.fn().mockResolvedValue({
+                  Configuration: {
+                    DeadLetterConfig: { TargetArn: "target-arn" }
+                  }
+                })
+              }))
+            }));
+          });
+
+          it("does not delete message", async () => {
+            await main({});
+            const sqs = new AWS.SQS();
+            expect(sqs.deleteMessage).not.toBeCalled();
+          });
         });
       });
     });
