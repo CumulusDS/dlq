@@ -11,5 +11,5 @@ module.exports = {
     ],
     "@babel/preset-flow"
   ],
-  plugins: ["@babel/plugin-proposal-nullish-coalescing-operator"]
+  plugins: ["@babel/plugin-proposal-nullish-coalescing-operator", "@babel/plugin-proposal-optional-chaining"]
 };
