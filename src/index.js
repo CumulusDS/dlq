@@ -7,7 +7,7 @@ import { promises as fs } from "fs";
 
 function printHelp() {
   console.log(
-    "Download or reprocess Dead Letters for an AWS Lambda function\n\n" +
+    "Download or reprocess Dead Letters for an AWS Lambda function or SQS\n\n" +
       "Options:\n" +
       "\t-d, --drain              - Print and delete messages\n" +
       "\t-R, --redrive            - Print, redrive and delete messages\n" +
@@ -16,6 +16,7 @@ function printHelp() {
       "\n" +
       "\t-r REGION, --region STRING          - Specify the AWS region to address\n" +
       "\t-f FUNCTION, --function-name STRING - The name of the Lambda function, version, or alias\n" +
+      "\t-q URL, --queue-url URL             - The url of the SQS queue\n" +
       "\n" +
       "\t-h, --help - Print this message.\n" +
       "\n" +
@@ -44,11 +45,38 @@ async function getLambdaDeadLetterConfigurationTargetArn(lambda, FunctionName) {
   return TargetArn;
 }
 
-async function getLambdaDeadLetterConfigurationTargetUrl(lambda, sqs, FunctionName) {
-  const QueueArn = await getLambdaDeadLetterConfigurationTargetArn(lambda, FunctionName);
-  const [, , , , QueueOwnerAWSAccountId, QueueName] = QueueArn.split(":");
+function decodeSqsArn(arn) {
+  const [, , , , QueueOwnerAWSAccountId, QueueName] = arn.split(":");
+  return { QueueOwnerAWSAccountId, QueueName };
+}
+
+async function getQueueUrl(sqs, arn) {
+  const { QueueOwnerAWSAccountId, QueueName } = decodeSqsArn(arn);
   const { QueueUrl } = await sqs.getQueueUrl({ QueueName, QueueOwnerAWSAccountId }).promise();
   return QueueUrl;
+}
+
+async function getLambdaDeadLetterConfigurationTargetUrl(lambda, sqs, FunctionName) {
+  const QueueArn = await getLambdaDeadLetterConfigurationTargetArn(lambda, FunctionName);
+  return getQueueUrl(sqs, QueueArn);
+}
+
+async function getQueueDeadLetterConfigurationTargetUrl(sqs, QueueUrl) {
+  const { Attributes } = await sqs
+    .getQueueAttributes({
+      QueueUrl,
+      AttributeNames: ["RedrivePolicy"]
+    })
+    .promise();
+  const RedrivePolicy = Attributes?.RedrivePolicy;
+  if (RedrivePolicy == null) {
+    throw new Error(`No redrive policy on queue '${QueueUrl}'`);
+  }
+  const { deadLetterTargetArn } = JSON.parse(RedrivePolicy);
+  if (deadLetterTargetArn == null) {
+    throw new Error(`No dead letter target on queue '${QueueUrl}'`);
+  }
+  return getQueueUrl(sqs, deadLetterTargetArn);
 }
 
 export type Options = {
@@ -56,6 +84,7 @@ export type Options = {
   drain?: boolean,
   redrive?: boolean,
   fun?: string,
+  queue?: string,
   space?: string,
   log?: string
 };
@@ -68,6 +97,7 @@ export default async function(options: Options) {
         region: ["r"],
         redrive: ["R"],
         fun: ["f", "function-name"],
+        queue: ["q", "queue-url"],
         space: ["S"],
         log: ["l"],
         help: ["h"]
@@ -81,7 +111,15 @@ export default async function(options: Options) {
     const FunctionName = args.fun ?? options.fun;
     const space = args.space ?? options.space ?? "0";
     const log = args.log ?? options.log;
-    if (args.help || typeof region !== "string" || typeof FunctionName !== "string" || typeof log === "boolean") {
+    const primaryQueue = args.queue ?? options.queue;
+    if (
+      args.help ||
+      typeof region !== "string" ||
+      typeof FunctionName === "boolean" ||
+      typeof primaryQueue === "boolean" ||
+      typeof log === "boolean" ||
+      (FunctionName == null && primaryQueue == null)
+    ) {
       printHelp();
       process.exit(1);
       return;
@@ -89,7 +127,10 @@ export default async function(options: Options) {
     const MaxNumberOfMessages = 10;
     const lambda = new AWS.Lambda({ region });
     const sqs = new AWS.SQS({ region });
-    const QueueUrl = await getLambdaDeadLetterConfigurationTargetUrl(lambda, sqs, FunctionName);
+    const QueueUrl =
+      FunctionName != null
+        ? await getLambdaDeadLetterConfigurationTargetUrl(lambda, sqs, FunctionName)
+        : await getQueueDeadLetterConfigurationTargetUrl(sqs, primaryQueue);
     let messages = await receiveMessage(sqs, QueueUrl, MaxNumberOfMessages);
     const promises = [];
     while (messages != null && messages.length > 0) {
@@ -97,29 +138,43 @@ export default async function(options: Options) {
         ...messages.map(async message => {
           console.log(JSON.stringify(message, null, parseInt(space, 10)));
           if (redrive) {
-            const InvocationType = log == null ? "Event" : "RequestResponse";
-            const LogType = log == null ? "None" : "Tail";
-            const result = await lambda
-              .invoke({ FunctionName, InvocationType, LogType, Payload: message.Body })
-              .promise();
-            if (result.StatusCode === 200) {
-              await fs.writeFile(
-                `${log}${message.MessageId}.log`,
-                Buffer.concat([
-                  Buffer.from(
-                    `${message.MessageId}\n${result.FunctionError ?? "Success"}\n${result.Payload ?? ""}\n`,
-                    "utf-8"
-                  ),
-                  Buffer.from(result.LogResult, "base64")
-                ])
-              );
-              if (result.FunctionError == null) {
+            if (FunctionName != null) {
+              const InvocationType = log == null ? "Event" : "RequestResponse";
+              const LogType = log == null ? "None" : "Tail";
+              const result = await lambda
+                .invoke({ FunctionName, InvocationType, LogType, Payload: message.Body })
+                .promise();
+              if (result.StatusCode === 200) {
+                await fs.writeFile(
+                  `${log}${message.MessageId}.log`,
+                  Buffer.concat([
+                    Buffer.from(
+                      `${message.MessageId}\n${result.FunctionError ?? "Success"}\n${result.Payload ?? ""}\n`,
+                      "utf-8"
+                    ),
+                    Buffer.from(result.LogResult, "base64")
+                  ])
+                );
+                if (result.FunctionError == null) {
+                  await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+                }
+              } else if (result.StatusCode === 202) {
                 await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+              } else {
+                console.error(result);
               }
-            } else if (result.StatusCode === 202) {
-              await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
             } else {
-              console.error(result);
+              const result = await sqs
+                .sendMessage({
+                  MessageBody: message.Body,
+                  QueueUrl: primaryQueue,
+                  MessageAttributes: message.MessageAttributes
+                })
+                .promise();
+              if (log != null) {
+                await fs.writeFile(`${log}${message.MessageId}.log`, `Redrive\n${result.MessageId}`);
+              }
+              await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
             }
           } else if (drain) {
             await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
