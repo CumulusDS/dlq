@@ -1,6 +1,6 @@
 # DQL
 
-CLI tool to manipulate AWS Dead Letter Queues
+CLI tool to manipulate a AWS Dead Letter Queue attached to a Lambda Function, or an SQS Queues
 
 ## Usage
 
@@ -39,6 +39,19 @@ npx -q @cumulusds/dlq --region us-east-1 --function-name MyService-dev-aggregato
 ```
 
 The command echos each JSON message on a separate line and deletes it from the queue.
+
+### Queue Dead Letter Target
+
+A primary SQS queue can be configured with another SQS queue as a dead letter target. The command redrives dead letters back to the primary queue:
+
+```shell script
+npx -q @cumulusds/dlq --region us-east-1 --queue-url https://sqs.us-east-1.amazonaws.com/000000000000/PrimaryQueueName --redrive
+```
+
+The `--log` option creates a log file with the MessageId for each redriven message:
+```shell script
+npx -q @cumulusds/dlq --region us-east-1 --queue-url https://sqs.us-east-1.amazonaws.com/000000000000/PrimaryQueueName --redrive --log filename-prefix-
+```
 
 ## Installation
 
