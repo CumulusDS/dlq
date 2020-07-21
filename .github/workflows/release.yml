@@ -1,0 +1,66 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Fetch all tags
+        run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+      - name: get current version and prior versions
+        id: versions
+        run: |
+          git tag --sort=-taggerdate > tags.txt
+          mostRecent=$(head -n1 tags.txt)
+          head -n2 tags.txt > latestTwo.txt
+          rm -f tags.txt latestTwo.txt
+          echo ::set-env name=mostRecentTag::$mostRecent
+          priorRelease=$(curl -s -H 'Authorization: token ${{ secrets.PRIOR_VERSION_TOKEN }}' -L https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
+          echo $priorRelease
+          echo ::set-env name=priorRelease::$priorRelease
+      - name: generate changelog
+        id: changelog
+        uses: charmixer/auto-changelog-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          output: changelog/changelog-${{ env.mostRecentTag }}.md
+          base: changelog/HISTORY.md
+          since_tag: ${{ env.priorRelease }}
+      - name: remove waterstamp line
+        id: trim
+        run: sed -i '$d' changelog/changelog-${{ env.mostRecentTag }}.md
+      - name: add "changes since" link
+        id: changesSince
+        run: sed -i '/\# Changelog/a [Changes Since Release](https://github.com/${{ github.repository }}/compare/${{ env.mostRecentTag }}...master)' changelog/changelog-${{ env.mostRecentTag }}.md
+      - name: echo changelog
+        id: echo
+        run: cat changelog/changelog-${{ env.mostRecentTag }}.md
+      - name: Create Release
+        if: success()
+        uses: ncipollo/release-action@v1.5.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: true
+          allowUpdates: true
+          draft: false
+          commit: ${{ github.sha }}
+          bodyFile: changelog/changelog-${{ env.mostRecentTag }}.md
+      - name: commit & push
+        uses: github-actions-x/commit@v2.4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          push-branch: master
+          commit-message: 'added changelog/changelog-${{ env.mostRecentTag }}.md'
+          force-add: 'true'
+          files: changelog/changelog-${{ env.mostRecentTag }}.md
+          rebase: 'false'
+          name: ${{ GITHUB.ACTOR }}
+          email: ${{ GITHUB.ACTOR }}@users.noreply.github.com
