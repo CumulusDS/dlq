@@ -342,6 +342,7 @@ describe("main", () => {
         mockEvent.emit("close");
         const sqs = new AWS.SQS();
         expect(createReadStream).toHaveBeenCalledWith("file://log");
+        expect(sqs.receiveMessage).not.toHaveBeenCalled();
         expect(sqs.sendMessage).toHaveBeenNthCalledWith(1, {
           MessageAttributes: {},
           MessageBody: "Hello World",
