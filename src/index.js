@@ -207,7 +207,7 @@ export default async function(options: Options) {
     const promises = [];
 
     if (fromFile != null) {
-      messagesFromInputFile(fromFile, (message: string) => {
+      await messagesFromInputFile(fromFile, (message: string) => {
         console.log(message);
         promises.push(redriveMessage(JSON.parse(message), lambda, sqs, QueueUrl, FunctionName, log, primaryQueue));
       });
