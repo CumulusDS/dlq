@@ -1,13 +1,15 @@
 // @flow
 
+import { EventEmitter } from "events";
 import minimist from "minimist";
 import AWS from "aws-sdk";
-import { promises as fs } from "fs";
+import { promises as fs, createReadStream } from "fs";
+import readline from "readline";
 import main from "../../src";
 
 jest.mock("minimist");
-jest.mock("fs", () => ({ promises: { writeFile: jest.fn().mockResolvedValue() } }));
-
+jest.mock("fs", () => ({ promises: { writeFile: jest.fn().mockResolvedValue() }, createReadStream: jest.fn() }));
+jest.mock("readline");
 jest.mock("aws-sdk");
 
 describe("main", () => {
@@ -291,6 +293,70 @@ describe("main", () => {
       it("has error exit status", async () => {
         await main({});
         expect(exit).toBeCalledWith(2);
+      });
+    });
+  });
+
+  describe("with from file", () => {
+    const region = "us-east-1";
+    const queue = "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue";
+    const fromFile = "file://log";
+    const mockEvent = new EventEmitter();
+
+    describe("redrive", () => {
+      beforeEach(() => {
+        // $FlowFixMe
+        minimist.mockImplementation(() => ({ region, queue, fromFile, redrive: true }));
+        readline.createInterface = jest.fn().mockReturnValue(mockEvent);
+      });
+
+      it("should read file stream without blocking thread", async () => {
+        await main({});
+        mockEvent.emit(
+          "line",
+          JSON.stringify({
+            MessageId: "1",
+            ReceiptHandle: "r1",
+            Body: "Hello World",
+            MessageAttributes: {}
+          })
+        );
+        mockEvent.emit(
+          "line",
+          JSON.stringify({
+            MessageId: "2",
+            ReceiptHandle: "r2",
+            Body: "Hello World 2",
+            MessageAttributes: {}
+          })
+        );
+        mockEvent.emit(
+          "line",
+          JSON.stringify({
+            MessageId: "3",
+            ReceiptHandle: "r3",
+            Body: "Goodbye World",
+            MessageAttributes: {}
+          })
+        );
+        mockEvent.emit("close");
+        const sqs = new AWS.SQS();
+        expect(createReadStream).toHaveBeenCalledWith("file://log");
+        expect(sqs.sendMessage).toHaveBeenNthCalledWith(1, {
+          MessageAttributes: {},
+          MessageBody: "Hello World",
+          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue"
+        });
+        expect(sqs.sendMessage).toHaveBeenNthCalledWith(2, {
+          MessageAttributes: {},
+          MessageBody: "Hello World 2",
+          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue"
+        });
+        expect(sqs.sendMessage).toHaveBeenNthCalledWith(3, {
+          MessageAttributes: {},
+          MessageBody: "Goodbye World",
+          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue"
+        });
       });
     });
   });
