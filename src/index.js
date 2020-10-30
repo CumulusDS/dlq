@@ -1,7 +1,6 @@
 // @flow
 // Command Line Interface generator for Dead Letter Queues
 
-import { once } from "events";
 import parseArgs from "minimist";
 import AWS from "aws-sdk";
 import fs, { promises as fsp } from "fs";
@@ -96,17 +95,19 @@ export type Options = {
 async function messagesFromInputFile(path: string, fn: string => void) {
   const fileStream = fs.createReadStream(path);
   const readlineInterface = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-  readlineInterface.on("line", fn);
-  await once(readlineInterface, "close");
+  for await (const line of readlineInterface) {
+    fn(line);
+  }
 }
 
 async function redriveMessageToLambda(
+  // $FlowFixMe
   message: any,
   lambda: AWS.Lambda,
   sqs: AWS.SQS,
   FunctionName: string,
   QueueUrl: string,
-  log: ?string
+  log: string
 ) {
   const InvocationType = log == null ? "Event" : "RequestResponse";
   const LogType = log == null ? "None" : "Tail";
@@ -129,6 +130,7 @@ async function redriveMessageToLambda(
   }
 }
 
+// $FlowFixMe
 async function redriveMessageToSqs(message: any, sqs: AWS.SQS, QueueUrl: string, primaryQueue: ?string, log: ?string) {
   const result = await sqs
     .sendMessage({
@@ -144,12 +146,13 @@ async function redriveMessageToSqs(message: any, sqs: AWS.SQS, QueueUrl: string,
 }
 
 async function redriveMessage(
+  // $FlowFixMe
   message: any,
   lambda: AWS.Lambda,
   sqs: AWS.SQS,
   queueUrl: string,
   functionName: ?string,
-  log: ?string,
+  log: string,
   primaryQueue: ?string
 ) {
   if (functionName != null) {
@@ -190,6 +193,7 @@ export default async function(options: Options) {
       typeof FunctionName === "boolean" ||
       typeof primaryQueue === "boolean" ||
       typeof log === "boolean" ||
+      typeof fromFile === "boolean" ||
       (FunctionName == null && primaryQueue == null)
     ) {
       printHelp();

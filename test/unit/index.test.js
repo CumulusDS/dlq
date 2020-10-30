@@ -1,6 +1,5 @@
 // @flow
 
-import { EventEmitter } from "events";
 import minimist from "minimist";
 import AWS from "aws-sdk";
 import { promises as fs, createReadStream } from "fs";
@@ -270,8 +269,8 @@ describe("main", () => {
 
     describe("without Redrive Policy", () => {
       beforeEach(() => {
-        getQueueAttributes.mockImplementation(() => ({
-          promise: jest.fn().mockResolvedValue({})
+        getQueueAttributes.mockImplementationOnce(() => ({
+          promise: jest.fn().mockResolvedValueOnce({})
         }));
       });
       it("has error exit status", async () => {
@@ -282,8 +281,8 @@ describe("main", () => {
 
     describe("without dead letter target", () => {
       beforeEach(() => {
-        getQueueAttributes.mockImplementation(() => ({
-          promise: jest.fn().mockResolvedValue({
+        getQueueAttributes.mockImplementationOnce(() => ({
+          promise: jest.fn().mockResolvedValueOnce({
             Attributes: {
               RedrivePolicy: JSON.stringify({})
             }
@@ -301,45 +300,51 @@ describe("main", () => {
     const region = "us-east-1";
     const queue = "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue";
     const fromFile = "file://log";
-    const mockEvent = new EventEmitter();
 
     describe("redrive", () => {
       beforeEach(() => {
         // $FlowFixMe
         minimist.mockImplementation(() => ({ region, queue, fromFile, redrive: true }));
-        readline.createInterface = jest.fn().mockReturnValue(mockEvent);
+        // $FlowFixMe
+        readline.createInterface = jest.fn().mockReturnValue([
+          Promise.resolve(
+            JSON.stringify({
+              MessageId: "1",
+              ReceiptHandle: "r1",
+              Body: "Hello World",
+              MessageAttributes: {}
+            })
+          ),
+          Promise.resolve(
+            JSON.stringify({
+              MessageId: "2",
+              ReceiptHandle: "r2",
+              Body: "Hello World 2",
+              MessageAttributes: {}
+            })
+          ),
+          Promise.resolve(
+            JSON.stringify({
+              MessageId: "3",
+              ReceiptHandle: "r3",
+              Body: "Goodbye World",
+              MessageAttributes: {}
+            })
+          )
+        ]);
+        getQueueAttributes.mockImplementationOnce(() => ({
+          promise: jest.fn().mockResolvedValueOnce({
+            Attributes: {
+              RedrivePolicy: JSON.stringify({
+                deadLetterTargetArn: "arn:aws:sqs:us-east-1:000000000000:MyService-prod-MyQueue"
+              })
+            }
+          })
+        }));
       });
 
       it("should read file stream without blocking thread", async () => {
         await main({});
-        mockEvent.emit(
-          "line",
-          JSON.stringify({
-            MessageId: "1",
-            ReceiptHandle: "r1",
-            Body: "Hello World",
-            MessageAttributes: {}
-          })
-        );
-        mockEvent.emit(
-          "line",
-          JSON.stringify({
-            MessageId: "2",
-            ReceiptHandle: "r2",
-            Body: "Hello World 2",
-            MessageAttributes: {}
-          })
-        );
-        mockEvent.emit(
-          "line",
-          JSON.stringify({
-            MessageId: "3",
-            ReceiptHandle: "r3",
-            Body: "Goodbye World",
-            MessageAttributes: {}
-          })
-        );
-        mockEvent.emit("close");
         const sqs = new AWS.SQS();
         expect(createReadStream).toHaveBeenCalledWith("file://log");
         expect(sqs.receiveMessage).not.toHaveBeenCalled();
