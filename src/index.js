@@ -3,7 +3,8 @@
 
 import parseArgs from "minimist";
 import AWS from "aws-sdk";
-import { promises as fs } from "fs";
+import fs, { promises as fsp } from "fs";
+import readline from "readline";
 
 function printHelp() {
   console.log(
@@ -17,6 +18,7 @@ function printHelp() {
       "\t-r REGION, --region STRING          - Specify the AWS region to address\n" +
       "\t-f FUNCTION, --function-name STRING - The name of the Lambda function, version, or alias\n" +
       "\t-q URL, --queue-url URL             - The url of the SQS queue\n" +
+      "\t-i FILE, --from-file FILE           - Redrive messages drained to a log file\n" +
       "\n" +
       "\t-h, --help - Print this message.\n" +
       "\n" +
@@ -86,8 +88,79 @@ export type Options = {
   fun?: string,
   queue?: string,
   space?: string,
-  log?: string
+  log?: string,
+  fromFile?: string
 };
+
+async function messagesFromInputFile(path: string, fn: string => void) {
+  const fileStream = fs.createReadStream(path);
+  const readlineInterface = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+  for await (const line of readlineInterface) {
+    fn(line);
+  }
+}
+
+async function redriveMessageToLambda(
+  // $FlowFixMe
+  message: any,
+  lambda: AWS.Lambda,
+  sqs: AWS.SQS,
+  FunctionName: string,
+  QueueUrl: string,
+  log: string
+) {
+  const InvocationType = log == null ? "Event" : "RequestResponse";
+  const LogType = log == null ? "None" : "Tail";
+  const result = await lambda.invoke({ FunctionName, InvocationType, LogType, Payload: message.Body }).promise();
+  if (result.StatusCode === 200) {
+    await fsp.writeFile(
+      `${log}${message.MessageId}.log`,
+      Buffer.concat([
+        Buffer.from(`${message.MessageId}\n${result.FunctionError ?? "Success"}\n${result.Payload ?? ""}\n`, "utf-8"),
+        Buffer.from(result.LogResult, "base64")
+      ])
+    );
+    if (result.FunctionError == null) {
+      await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+    }
+  } else if (result.StatusCode === 202) {
+    await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+  } else {
+    console.error(result);
+  }
+}
+
+// $FlowFixMe
+async function redriveMessageToSqs(message: any, sqs: AWS.SQS, QueueUrl: string, primaryQueue: ?string, log: ?string) {
+  const result = await sqs
+    .sendMessage({
+      MessageBody: message.Body,
+      QueueUrl: primaryQueue,
+      MessageAttributes: message.MessageAttributes
+    })
+    .promise();
+  if (log != null) {
+    await fsp.writeFile(`${log}${message.MessageId}.log`, `Redrive\n${result.MessageId}`);
+  }
+  await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+}
+
+async function redriveMessage(
+  // $FlowFixMe
+  message: any,
+  lambda: AWS.Lambda,
+  sqs: AWS.SQS,
+  queueUrl: string,
+  functionName: ?string,
+  log: string,
+  primaryQueue: ?string
+) {
+  if (functionName != null) {
+    await redriveMessageToLambda(message, lambda, sqs, functionName, queueUrl, log);
+  } else {
+    await redriveMessageToSqs(message, sqs, queueUrl, primaryQueue, log);
+  }
+}
 
 export default async function(options: Options) {
   try {
@@ -100,6 +173,7 @@ export default async function(options: Options) {
         queue: ["q", "queue-url"],
         space: ["S"],
         log: ["l"],
+        fromFile: ["i", "from-file"],
         help: ["h"]
       },
       boolean: ["drain", "redrive"]
@@ -112,12 +186,14 @@ export default async function(options: Options) {
     const space = args.space ?? options.space ?? "0";
     const log = args.log ?? options.log;
     const primaryQueue = args.queue ?? options.queue;
+    const fromFile = args.fromFile ?? options.fromFile;
     if (
       args.help ||
       typeof region !== "string" ||
       typeof FunctionName === "boolean" ||
       typeof primaryQueue === "boolean" ||
       typeof log === "boolean" ||
+      typeof fromFile === "boolean" ||
       (FunctionName == null && primaryQueue == null)
     ) {
       printHelp();
@@ -131,58 +207,30 @@ export default async function(options: Options) {
       FunctionName != null
         ? await getLambdaDeadLetterConfigurationTargetUrl(lambda, sqs, FunctionName)
         : await getQueueDeadLetterConfigurationTargetUrl(sqs, primaryQueue);
-    let messages = await receiveMessage(sqs, QueueUrl, MaxNumberOfMessages);
+
     const promises = [];
-    while (messages != null && messages.length > 0) {
-      promises.push(
-        ...messages.map(async message => {
-          console.log(JSON.stringify(message, null, parseInt(space, 10)));
-          if (redrive) {
-            if (FunctionName != null) {
-              const InvocationType = log == null ? "Event" : "RequestResponse";
-              const LogType = log == null ? "None" : "Tail";
-              const result = await lambda
-                .invoke({ FunctionName, InvocationType, LogType, Payload: message.Body })
-                .promise();
-              if (result.StatusCode === 200) {
-                await fs.writeFile(
-                  `${log}${message.MessageId}.log`,
-                  Buffer.concat([
-                    Buffer.from(
-                      `${message.MessageId}\n${result.FunctionError ?? "Success"}\n${result.Payload ?? ""}\n`,
-                      "utf-8"
-                    ),
-                    Buffer.from(result.LogResult, "base64")
-                  ])
-                );
-                if (result.FunctionError == null) {
-                  await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
-                }
-              } else if (result.StatusCode === 202) {
-                await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
-              } else {
-                console.error(result);
-              }
-            } else {
-              const result = await sqs
-                .sendMessage({
-                  MessageBody: message.Body,
-                  QueueUrl: primaryQueue,
-                  MessageAttributes: message.MessageAttributes
-                })
-                .promise();
-              if (log != null) {
-                await fs.writeFile(`${log}${message.MessageId}.log`, `Redrive\n${result.MessageId}`);
-              }
+
+    if (fromFile != null) {
+      await messagesFromInputFile(fromFile, (message: string) => {
+        console.log(message);
+        promises.push(redriveMessage(JSON.parse(message), lambda, sqs, QueueUrl, FunctionName, log, primaryQueue));
+      });
+    } else {
+      let messages = await receiveMessage(sqs, QueueUrl, MaxNumberOfMessages);
+      while (messages != null && messages.length > 0) {
+        promises.push(
+          ...messages.map(async message => {
+            console.log(JSON.stringify(message, null, parseInt(space, 10)));
+            if (redrive) {
+              await redriveMessage(message, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue);
+            } else if (drain) {
               await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
             }
-          } else if (drain) {
-            await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
-          }
-        })
-      );
-      // eslint-disable-next-line no-await-in-loop
-      messages = await receiveMessage(sqs, QueueUrl, MaxNumberOfMessages);
+          })
+        );
+        // eslint-disable-next-line no-await-in-loop
+        messages = await receiveMessage(sqs, QueueUrl, MaxNumberOfMessages);
+      }
     }
     await Promise.all(promises);
     process.exit(0);
