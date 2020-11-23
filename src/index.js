@@ -159,6 +159,17 @@ async function redriveMessage(
 }
 
 export default async function(options: Options) {
+  function handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain) {
+    return async message => {
+      console.log(JSON.stringify(message, null, parseInt(space, 10)));
+      if (redrive) {
+        await redriveMessage(message, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue);
+      } else if (drain) {
+        await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+      }
+    };
+  }
+
   try {
     const args = parseArgs(process.argv.slice(2), {
       alias: {
@@ -215,14 +226,7 @@ export default async function(options: Options) {
       let messages = await receiveMessage(sqs, { QueueUrl, MaxNumberOfMessages });
       while (messages != null && messages.length > 0) {
         promises.push(
-          ...messages.map(async message => {
-            console.log(JSON.stringify(message, null, parseInt(space, 10)));
-            if (redrive) {
-              await redriveMessage(message, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue);
-            } else if (drain) {
-              await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
-            }
-          })
+          ...messages.map(handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain))
         );
         // eslint-disable-next-line no-await-in-loop
         messages = await receiveMessage(sqs, { QueueUrl, MaxNumberOfMessages });
