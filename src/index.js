@@ -15,6 +15,7 @@ function printHelp() {
       "\t-R, --redrive            - Print, redrive and delete messages\n" +
       "\t-l PREFIX, --log PREFIX  - Log redrive output to files with the given prefix\n" +
       "\t-S SPACE, --space NUMBER - Pretty print with N spaces\n" +
+      "\t-t TIME, --time NUMBER   - Run for the given number of seconds\n" +
       "\n" +
       "\t-r REGION, --region STRING          - Specify the AWS region to address\n" +
       "\t-f FUNCTION, --function-name STRING - The name of the Lambda function, version, or alias\n" +
@@ -34,15 +35,6 @@ function printHelp() {
   );
 }
 
-async function getLambdaDeadLetterConfigurationTargetArn(lambda, FunctionName) {
-  const {
-    Configuration: {
-      DeadLetterConfig: { TargetArn }
-    }
-  } = await lambda.getFunction({ FunctionName }).promise();
-  return TargetArn;
-}
-
 function decodeSqsArn(arn) {
   const [, , , , QueueOwnerAWSAccountId, QueueName] = arn.split(":");
   return { QueueOwnerAWSAccountId, QueueName };
@@ -54,12 +46,18 @@ async function getQueueUrl(sqs, arn) {
   return QueueUrl;
 }
 
-async function getLambdaDeadLetterConfigurationTargetUrl(lambda, sqs, FunctionName) {
-  const QueueArn = await getLambdaDeadLetterConfigurationTargetArn(lambda, FunctionName);
-  return getQueueUrl(sqs, QueueArn);
+async function getLambdaConfiguration(lambda, sqs, FunctionName) {
+  const {
+    Configuration: {
+      Timeout,
+      DeadLetterConfig: { TargetArn }
+    }
+  } = await lambda.getFunction({ FunctionName }).promise();
+  const QueueUrl = await getQueueUrl(sqs, TargetArn);
+  return { Timeout, QueueUrl };
 }
 
-async function getQueueDeadLetterConfigurationTargetUrl(sqs, QueueUrl) {
+async function getSqsConfiguration(sqs, QueueUrl) {
   const { Attributes } = await sqs
     .getQueueAttributes({
       QueueUrl,
@@ -74,7 +72,7 @@ async function getQueueDeadLetterConfigurationTargetUrl(sqs, QueueUrl) {
   if (deadLetterTargetArn == null) {
     throw new Error(`No dead letter target on queue '${QueueUrl}'`);
   }
-  return getQueueUrl(sqs, deadLetterTargetArn);
+  return { Timeout: 0, QueueUrl: await getQueueUrl(sqs, deadLetterTargetArn) };
 }
 
 export type Options = {
@@ -84,6 +82,7 @@ export type Options = {
   fun?: string,
   queue?: string,
   space?: string,
+  time?: string,
   log?: string,
   fromFile?: string
 };
@@ -179,6 +178,7 @@ export default async function(options: Options) {
         fun: ["f", "function-name"],
         queue: ["q", "queue-url"],
         space: ["S"],
+        time: ["t"],
         log: ["l"],
         fromFile: ["i", "from-file"],
         help: ["h"]
@@ -191,6 +191,7 @@ export default async function(options: Options) {
     const redrive = args.redrive ?? options.redrive ?? false;
     const FunctionName = args.fun ?? options.fun;
     const space = args.space ?? options.space ?? "0";
+    const time = Number(args.time ?? options.time ?? "30");
     const log = args.log ?? options.log;
     const primaryQueue = args.queue ?? options.queue;
     const fromFile = args.fromFile ?? options.fromFile;
@@ -201,7 +202,8 @@ export default async function(options: Options) {
       typeof primaryQueue === "boolean" ||
       typeof log === "boolean" ||
       typeof fromFile === "boolean" ||
-      (FunctionName == null && primaryQueue == null)
+      (FunctionName == null && primaryQueue == null) ||
+      Number.isNaN(time)
     ) {
       printHelp();
       process.exit(1);
@@ -210,10 +212,14 @@ export default async function(options: Options) {
     const MaxNumberOfMessages = 10;
     const lambda = new AWS.Lambda({ region });
     const sqs = new AWS.SQS({ region });
-    const QueueUrl =
+    const now = new Date();
+    const { Timeout, QueueUrl } =
       FunctionName != null
-        ? await getLambdaDeadLetterConfigurationTargetUrl(lambda, sqs, FunctionName)
-        : await getQueueDeadLetterConfigurationTargetUrl(sqs, primaryQueue);
+        ? await getLambdaConfiguration(lambda, sqs, FunctionName)
+        : await getSqsConfiguration(sqs, primaryQueue);
+
+    // Deadline for starting invocation
+    const Deadline = new Date(now.getTime() + (time - Timeout) * 1000);
 
     const promises = [];
 
@@ -223,7 +229,7 @@ export default async function(options: Options) {
         promises.push(redriveMessage(JSON.parse(message), lambda, sqs, QueueUrl, FunctionName, log, primaryQueue));
       });
     } else {
-      for await (const message of generateSqsMessages(sqs, { QueueUrl, MaxNumberOfMessages })) {
+      for await (const message of generateSqsMessages(sqs, { QueueUrl, MaxNumberOfMessages, Deadline })) {
         promises.push(
           handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain)(message)
         );
