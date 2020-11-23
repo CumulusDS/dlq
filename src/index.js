@@ -5,6 +5,7 @@ import parseArgs from "minimist";
 import AWS from "aws-sdk";
 import fs, { promises as fsp } from "fs";
 import readline from "readline";
+import receiveMessage from "./receive-message";
 
 function printHelp() {
   console.log(
@@ -31,11 +32,6 @@ function printHelp() {
       "\tExample:\n" +
       "\t$awsudo -u sts-prod yarn --silent dlq --region us-east-2 --function-name MyService-prod-myFunction --redrive\n"
   );
-}
-
-async function receiveMessage(sqs, QueueUrl, MaxNumberOfMessages) {
-  const { Messages } = await sqs.receiveMessage({ QueueUrl, MaxNumberOfMessages }).promise();
-  return Messages;
 }
 
 async function getLambdaDeadLetterConfigurationTargetArn(lambda, FunctionName) {
@@ -216,7 +212,7 @@ export default async function(options: Options) {
         promises.push(redriveMessage(JSON.parse(message), lambda, sqs, QueueUrl, FunctionName, log, primaryQueue));
       });
     } else {
-      let messages = await receiveMessage(sqs, QueueUrl, MaxNumberOfMessages);
+      let messages = await receiveMessage(sqs, { QueueUrl, MaxNumberOfMessages });
       while (messages != null && messages.length > 0) {
         promises.push(
           ...messages.map(async message => {
@@ -229,7 +225,7 @@ export default async function(options: Options) {
           })
         );
         // eslint-disable-next-line no-await-in-loop
-        messages = await receiveMessage(sqs, QueueUrl, MaxNumberOfMessages);
+        messages = await receiveMessage(sqs, { QueueUrl, MaxNumberOfMessages });
       }
     }
     await Promise.all(promises);
