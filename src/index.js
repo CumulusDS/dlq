@@ -5,7 +5,7 @@ import parseArgs from "minimist";
 import AWS from "aws-sdk";
 import fs, { promises as fsp } from "fs";
 import readline from "readline";
-import receiveMessage from "./receive-message";
+import generateSqsMessages from "./generate-sqs-messages";
 
 function printHelp() {
   console.log(
@@ -223,13 +223,10 @@ export default async function(options: Options) {
         promises.push(redriveMessage(JSON.parse(message), lambda, sqs, QueueUrl, FunctionName, log, primaryQueue));
       });
     } else {
-      let messages = await receiveMessage(sqs, { QueueUrl, MaxNumberOfMessages });
-      while (messages != null && messages.length > 0) {
+      for await (const message of generateSqsMessages(sqs, { QueueUrl, MaxNumberOfMessages })) {
         promises.push(
-          ...messages.map(handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain))
+          handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain)(message)
         );
-        // eslint-disable-next-line no-await-in-loop
-        messages = await receiveMessage(sqs, { QueueUrl, MaxNumberOfMessages });
       }
     }
     await Promise.all(promises);
