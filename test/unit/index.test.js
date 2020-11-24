@@ -43,7 +43,8 @@ describe("main", () => {
       getFunction: jest.fn(() => ({
         promise: jest.fn().mockResolvedValue({
           Configuration: {
-            DeadLetterConfig: { TargetArn: "target-arn" }
+            DeadLetterConfig: { TargetArn: "target-arn" },
+            Timeout: 6
           }
         })
       }))
@@ -144,7 +145,8 @@ describe("main", () => {
             getFunction: jest.fn(() => ({
               promise: jest.fn().mockResolvedValue({
                 Configuration: {
-                  DeadLetterConfig: { TargetArn: "target-arn" }
+                  DeadLetterConfig: { TargetArn: "target-arn" },
+                  Timeout: 6
                 }
               })
             }))
@@ -173,7 +175,8 @@ describe("main", () => {
               getFunction: jest.fn(() => ({
                 promise: jest.fn().mockResolvedValue({
                   Configuration: {
-                    DeadLetterConfig: { TargetArn: "target-arn" }
+                    DeadLetterConfig: { TargetArn: "target-arn" },
+                    Timeout: 6
                   }
                 })
               }))

@@ -6,6 +6,7 @@ import AWS from "aws-sdk";
 import fs, { promises as fsp } from "fs";
 import readline from "readline";
 import generateSqsMessages from "./generate-sqs-messages";
+import aimd from "./aimd";
 
 function printHelp() {
   console.log(
@@ -229,10 +230,10 @@ export default async function(options: Options) {
         promises.push(redriveMessage(JSON.parse(message), lambda, sqs, QueueUrl, FunctionName, log, primaryQueue));
       });
     } else {
+      const rateControl = aimd({ a: 0.05, b: 0.5, w: 0.1, deadline: Deadline.getTime() });
+      const handler = handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain);
       for await (const message of generateSqsMessages(sqs, { QueueUrl, MaxNumberOfMessages, Deadline })) {
-        promises.push(
-          handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain)(message)
-        );
+        promises.push(rateControl(() => handler(message)));
       }
     }
     await Promise.all(promises);
