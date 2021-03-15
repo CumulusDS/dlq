@@ -39,7 +39,7 @@ jobs:
         run: cat changelog/changelog-${{ env.mostRecentTag }}.md
       - name: Create Release
         if: success()
-        uses: ncipollo/release-action@v1.8.0
+        uses: ncipollo/release-action@v1.8.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           prerelease: true
