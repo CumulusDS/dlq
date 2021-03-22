@@ -48,7 +48,7 @@ jobs:
           commit: ${{ github.sha }}
           bodyFile: changelog/changelog-${{ env.mostRecentTag }}.md
       - name: commit & push
-        uses: github-actions-x/commit@v2.7
+        uses: github-actions-x/commit@v2.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           push-branch: master
