@@ -60,6 +60,7 @@
   "bin": "bin/dlq.js",
   "dependencies": {
     "aws-sdk": "^2.706.0",
+    "cli-progress": "^3.9.0",
     "minimist": "^1.2.5"
   },
   "devDependencies": {

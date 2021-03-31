@@ -4,6 +4,7 @@
 import parseArgs from "minimist";
 import AWS from "aws-sdk";
 import fs, { promises as fsp } from "fs";
+import cliProgress from "cli-progress";
 import readline from "readline";
 import generateSqsMessages from "./generate-sqs-messages";
 import aimd from "./aimd";
@@ -191,13 +192,13 @@ export default async function(options: Options) {
       boolean: ["drain", "redrive"]
     });
 
-    const rate = Number(args.rate ?? options.rate ?? 0.01);
+    const rate = Number(args.rate ?? options.rate ?? 10) / 1000;
     const region = args.region ?? options.region;
     const drain = args.drain ?? options.drain ?? false;
     const redrive = args.redrive ?? options.redrive ?? false;
     const FunctionName = args.fun ?? options.fun;
     const space = args.space ?? options.space ?? "0";
-    const time = Number(args.time ?? options.time ?? "30");
+    const time = Number(args.time ?? options.time ?? "1000");
     const log = args.log ?? options.log;
     const primaryQueue = args.queue ?? options.queue;
     const fromFile = args.fromFile ?? options.fromFile;
@@ -225,7 +226,6 @@ export default async function(options: Options) {
         : await getSqsConfiguration(sqs, primaryQueue);
 
     // Deadline for starting invocation
-    console.error({ time, Timeout });
     const VisibilityTimeout = time - Timeout;
     const Deadline = now.getTime() + VisibilityTimeout * 1000;
 
@@ -236,21 +236,36 @@ export default async function(options: Options) {
         console.log(message);
         promises.push(redriveMessage(JSON.parse(message), lambda, sqs, QueueUrl, FunctionName, log, primaryQueue));
       });
+      await Promise.all(promises);
     } else {
+      const progress = new cliProgress.SingleBar({
+        format: "Progress | {bar} | {value}/{total} | {rate}/second |",
+        barCompleteChar: "\u2588",
+        barIncompleteChar: "\u2591",
+        hideCursor: true
+      });
+      let total = 1;
       const control = aimd({ a: rate / 20, b: 0.5, w: rate, deadline: Deadline });
       const handler = handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain);
-      console.error({ QueueUrl, MaxNumberOfMessages, Deadline });
+      progress.start(1, 0, { rate: rate * 1000 });
       for await (const message of generateSqsMessages(sqs, {
         QueueUrl,
         MaxNumberOfMessages,
         Deadline,
         VisibilityTimeout
       })) {
-        console.error(".");
-        promises.push(control(() => handler(message)));
+        promises.push(
+          control(async (w: number) => {
+            await handler(message);
+            progress.increment({ rate: (w * 1000).toFixed(1) });
+          })
+        );
+        total += 1;
+        progress.setTotal(total);
       }
+      await Promise.all(promises);
+      progress.stop();
     }
-    await Promise.all(promises);
     process.exit(0);
   } catch (e) {
     console.error(e.message);
