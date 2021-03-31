@@ -17,7 +17,8 @@ export default async function* generateSqsMessages(
   async function receive() {
     const now = Date.now();
     if (Deadline < now) return null;
-    return receiveMessage(sqs, sqsParams);
+    const WaitTimeSeconds = Math.min(20, (Deadline - now) / 1000);
+    return receiveMessage(sqs, { ...sqsParams, WaitTimeSeconds });
   }
 
   let messages = await receive();
