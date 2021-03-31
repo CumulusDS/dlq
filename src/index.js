@@ -244,7 +244,7 @@ export default async function(options: Options) {
         barIncompleteChar: "\u2591",
         hideCursor: true
       });
-      let total = 1;
+      let total = 0;
       const control = aimd({ a: rate / 20, b: 0.5, w: rate, deadline: Deadline });
       const handler = handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain);
       progress.start(1, 0, { rate: rate * 1000 });
