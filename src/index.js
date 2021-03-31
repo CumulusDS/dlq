@@ -16,6 +16,8 @@ function printHelp() {
       "\t-R, --redrive            - Print, redrive and delete messages\n" +
       "\t-l PREFIX, --log PREFIX  - Log redrive output to files with the given prefix\n" +
       "\t-S SPACE, --space NUMBER - Pretty print with N spaces\n" +
+      "\n" +
+      "\t-w RATE, --rate RATE     - Issue the given number of messages per second\n" +
       "\t-t TIME, --time NUMBER   - Run for the given number of seconds\n" +
       "\n" +
       "\t-r REGION, --region STRING          - Specify the AWS region to address\n" +
@@ -79,6 +81,7 @@ async function getSqsConfiguration(sqs, QueueUrl) {
 export type Options = {
   region?: string,
   drain?: boolean,
+  rate?: number,
   redrive?: boolean,
   fun?: string,
   queue?: string,
@@ -174,6 +177,7 @@ export default async function(options: Options) {
     const args = parseArgs(process.argv.slice(2), {
       alias: {
         drain: ["d"],
+        rate: ["w"],
         region: ["r"],
         redrive: ["R"],
         fun: ["f", "function-name"],
@@ -187,6 +191,7 @@ export default async function(options: Options) {
       boolean: ["drain", "redrive"]
     });
 
+    const rate = Number(args.rate ?? options.rate ?? 0.01);
     const region = args.region ?? options.region;
     const drain = args.drain ?? options.drain ?? false;
     const redrive = args.redrive ?? options.redrive ?? false;
@@ -220,7 +225,9 @@ export default async function(options: Options) {
         : await getSqsConfiguration(sqs, primaryQueue);
 
     // Deadline for starting invocation
-    const Deadline = new Date(now.getTime() + (time - Timeout) * 1000);
+    console.error({ time, Timeout });
+    const VisibilityTimeout = time - Timeout;
+    const Deadline = now.getTime() + VisibilityTimeout * 1000;
 
     const promises = [];
 
@@ -230,10 +237,17 @@ export default async function(options: Options) {
         promises.push(redriveMessage(JSON.parse(message), lambda, sqs, QueueUrl, FunctionName, log, primaryQueue));
       });
     } else {
-      const rateControl = aimd({ a: 0.05, b: 0.5, w: 0.1, deadline: Deadline.getTime() });
+      const control = aimd({ a: rate / 20, b: 0.5, w: rate, deadline: Deadline });
       const handler = handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain);
-      for await (const message of generateSqsMessages(sqs, { QueueUrl, MaxNumberOfMessages, Deadline })) {
-        promises.push(rateControl(() => handler(message)));
+      console.error({ QueueUrl, MaxNumberOfMessages, Deadline });
+      for await (const message of generateSqsMessages(sqs, {
+        QueueUrl,
+        MaxNumberOfMessages,
+        Deadline,
+        VisibilityTimeout
+      })) {
+        console.error(".");
+        promises.push(control(() => handler(message)));
       }
     }
     await Promise.all(promises);
