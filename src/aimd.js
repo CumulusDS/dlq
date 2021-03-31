@@ -40,10 +40,11 @@ export default function aimd(params: Params) {
     let shortfall = n - target;
     let delay = shortfall / w;
     while (now + delay < deadline) {
+      // console.error(`${a} ${b} ${w} ${n} ${elapsed} ${target} ${shortfall} ${delay} ${deadline - now}`);
+      n += 1;
       if (delay > 0) {
         await setTimeoutPromise(delay);
       }
-      n += 1;
       try {
         const result = await fun();
         w += a;
@@ -56,8 +57,10 @@ export default function aimd(params: Params) {
         shortfall = n - target;
         delay = shortfall / w;
         if (deadline <= now + delay) {
+          console.error("Stopping after error.", err.message);
           throw err;
         }
+        console.error("Retrying after error.", err.message);
       }
     }
     throw new Timeout();
