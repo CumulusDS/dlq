@@ -33,20 +33,19 @@ export default function aimd(params: Params) {
   let n = 0;
   const start = Date.now();
 
-  return async function invoke<T>(fun: () => Promise<T>): Promise<T> {
+  return async function invoke<T>(fun: (w: number) => Promise<T>): Promise<T> {
     let now = Date.now();
     let elapsed = now - start;
     let target = elapsed * w;
     let shortfall = n - target;
     let delay = shortfall / w;
     while (now + delay < deadline) {
-      // console.error(`${a} ${b} ${w} ${n} ${elapsed} ${target} ${shortfall} ${delay} ${deadline - now}`);
       n += 1;
       if (delay > 0) {
         await setTimeoutPromise(delay);
       }
       try {
-        const result = await fun();
+        const result = await fun(w);
         w += a;
         return result;
       } catch (err) {

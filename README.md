@@ -53,6 +53,12 @@ The `--log` option creates a log file with the MessageId for each redriven messa
 npx -q @cumulusds/dlq --region us-east-1 --queue-url https://sqs.us-east-1.amazonaws.com/000000000000/PrimaryQueueName --redrive --log filename-prefix-
 ```
 
+### Driving Rate
+
+Use the --rate option to set the initial number of messages per second. The utility uses [additive-increase/multiplicative-decrease] to adapt the message rate, based on success or failure of the target. The default rate is 10/second.
+
+[additive-increase/multiplicative-decrease]: https://en.wikipedia.org/wiki/Additive_increase/multiplicative_decrease
+
 ## Installation
 
 Packages that define a Dead Letter Queue can create a CLI with customized defaults by adding a file to the scripts directory that uses this library. 
