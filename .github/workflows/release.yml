@@ -22,21 +22,35 @@ jobs:
           echo "priorRelease=$(curl -s -H 'Authorization: token ${{ secrets.PRIOR_VERSION_TOKEN }}' -L https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)" >> $GITHUB_ENV
       - name: generate changelog
         id: changelog
-        uses: charmixer/auto-changelog-action@v1
+        uses: heinrichreimer/auto-changelog-action@master
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
-          output: changelog/changelog-${{ env.mostRecentTag }}.md
-          base: changelog/HISTORY.md
-          since_tag: ${{ env.priorRelease }}
-      - name: remove waterstamp line
-        id: trim
-        run: sed -i '$d' changelog/changelog-${{ env.mostRecentTag }}.md
+          sinceTag: ${{ env.priorRelease }}
+          headerLabel: "# 📑 Changelog"
+          breakingLabel: "### 💥 Breaking"
+          enhancementLabel: "### 🚀 Enhancements"
+          bugsLabel: "### 🐛 Bug fixes"
+          deprecatedLabel: "### ⚠️ Deprecations"
+          removedLabel: "### 🔥 Removals"
+          securityLabel: "### 🛡️ Security"
+          issuesLabel: "### 📁 Other issues"
+          prLabel: "### 📁 Other pull requests"
+          addSections: '{"documentation":{"prefix":"### 📖 Documentation","labels":["documentation"]},"prod":{"prefix":"### Production site updates","labels":["prod"]},"dev":{"prefix":"### Development site updates","labels":["dev"]},"dependabot":{"prefix":"### Dependabot updates","labels":["dependabot"]},"actions":{"prefix":"### Actions","labels":["actions"]},"dependencies":{"prefix":"### Dependency updates","labels":["dependencies"]}}'
+          issues: true
+          issuesWoLabels: true
+          pullRequests: true
+          prWoLabels: true
+          author: true
+          unreleased: true
+          compareLink: true
+          stripGeneratorNotice: true
+          verbose: true
       - name: add "changes since" link
         id: changesSince
-        run: sed -i '/\# Changelog/a [Changes Since Release](https://github.com/${{ github.repository }}/compare/${{ env.mostRecentTag }}...master)' changelog/changelog-${{ env.mostRecentTag }}.md
+        run: sed -i '/\# 📑 Changelog/a [Changes Since Release](https://github.com/${{ github.repository }}/compare/${{ env.mostRecentTag }}...master)' CHANGELOG.md
       - name: echo changelog
         id: echo
-        run: cat changelog/changelog-${{ env.mostRecentTag }}.md
+        run: cat CHANGELOG.md
       - name: Create Release
         if: success()
         uses: ncipollo/release-action@v1.8.2
@@ -46,15 +60,5 @@ jobs:
           allowUpdates: true
           draft: false
           commit: ${{ github.sha }}
-          bodyFile: changelog/changelog-${{ env.mostRecentTag }}.md
-      - name: commit & push
-        uses: github-actions-x/commit@v2.8
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          push-branch: master
-          commit-message: 'added changelog/changelog-${{ env.mostRecentTag }}.md'
-          force-add: 'true'
-          files: changelog/changelog-${{ env.mostRecentTag }}.md
-          rebase: 'false'
-          name: ${{ GITHUB.ACTOR }}
-          email: ${{ GITHUB.ACTOR }}@users.noreply.github.com
+          bodyFile: CHANGELOG.md
+
