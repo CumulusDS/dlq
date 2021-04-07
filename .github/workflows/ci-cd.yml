@@ -42,7 +42,7 @@ jobs:
       - name: Test
         run: yarn test
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2.2.3
+        uses: actions/upload-artifact@v2
         with:
           name: var
           path: var
