@@ -217,13 +217,13 @@ export default async function(options: Options) {
       return;
     }
     const MaxNumberOfMessages = 10;
-    const lambda = new AWS.Lambda({ region });
     const sqs = new AWS.SQS({ region });
     const now = new Date();
     const { Timeout, QueueUrl } =
       FunctionName != null
-        ? await getLambdaConfiguration(lambda, sqs, FunctionName)
+        ? await getLambdaConfiguration(new AWS.Lambda({ region }), sqs, FunctionName)
         : await getSqsConfiguration(sqs, primaryQueue);
+    const lambda = new AWS.Lambda({ region, httpOptions: { timeout: Timeout * 1000 + 1000 } });
 
     // Deadline for starting invocation
     const VisibilityTimeout = time - Timeout;
