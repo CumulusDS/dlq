@@ -2,6 +2,18 @@
 # yarn lockfile v1
 
 
+"@async-generator/merge-race@^1.0.3":
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/@async-generator/merge-race/-/merge-race-1.0.3.tgz#54fbf2c771a909523c53c2c374c2eacab8232ec1"
+  integrity sha512-6bbKfLJoRpMdqWhR8MuoSdgtqXZ0S1MnPv21QRi1BefOPBNCJJZJikk3U9LhZVEw9RuqIwd56AuLroTC+EeFgQ==
+  dependencies:
+    "@async-generator/subject" "^1.0.3"
+
+"@async-generator/subject@^1.0.3":
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/@async-generator/subject/-/subject-1.0.3.tgz#c79bb2f231b6046be5416f0a76e9df43f8853d2c"
+  integrity sha512-8aa17UMPPmhSEGcsjsoo7GqJvgw6L8um+8YQPeKYxK/zEZdSh1Mep/QoOo4/3sAYzFBtTwDSoib7J15SZAqfwg==
+
 "@babel/cli@^7.0.0":
   version "7.8.4"
   resolved "https://registry.yarnpkg.com/@babel/cli/-/cli-7.8.4.tgz#505fb053721a98777b2b175323ea4f090b7d3c1c"
