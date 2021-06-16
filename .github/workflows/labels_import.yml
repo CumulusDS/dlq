@@ -1,0 +1,49 @@
+name: Import Labels
+
+on:
+  label:
+    types:
+      - created
+      - edited
+      - deleted
+
+jobs:
+  import:
+    name: Import Labels
+    runs-on: ubuntu-20.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Import between existing labels
+        uses: b4b4r07/github-labeler@master
+        with:
+          import: 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v3
+        id: cpr
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Import existing labels"
+          title: "Import existing labels"
+          body: |
+            ## Summary
+            #### What does this PR do?
+            - Syncs update of labels in repo to labels.yml
+
+            ## Details
+            #### Why did you make this change? What does it affect?
+            - Current labels.yaml and existing labels don't match.
+          branch: import-labels
+          branch-suffix: timestamp
+          delete-branch: true
+          reviewers: ${{ GITHUB.ACTOR }}
+          labels: automation
+      - name: Check outputs
+        run: |
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
