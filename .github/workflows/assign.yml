@@ -1,0 +1,16 @@
+name: Assigner
+
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request_target:
+    types: [opened, reopened]
+
+jobs:
+  assignAuthor:
+    name: Assign author
+    runs-on: ubuntu-20.04
+    timeout-minutes: 5
+    steps:
+      - name: assign
+        uses: technote-space/assign-author@v1.5.11
