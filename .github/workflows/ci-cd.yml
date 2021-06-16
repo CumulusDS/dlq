@@ -15,11 +15,12 @@ jobs:
     strategy:
       matrix:
         node: [10, 12, 13, 14]
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Install Node ${{ matrix.node }}
-        uses: actions/setup-node@v2.1.5
+        uses: actions/setup-node@v2
         with:
           node-version: ${{ matrix.node }}
       - name: Install NPM credentials
@@ -49,14 +50,16 @@ jobs:
           path: var
         if: always()
   publish:
+    name: Publish
     runs-on: ubuntu-18.04
     needs: unit
     if: github.event_name == 'release'
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Install Node 14
-        uses: actions/setup-node@v2.1.5
+        uses: actions/setup-node@v2
         with:
           node-version: 14
       - name: Install NPM credentials
@@ -80,3 +83,19 @@ jobs:
       - name: Publish
         run: npm publish
         if: startsWith(github.event.ref, 'refs/tags')
+  yarn:
+    name: Yarn Lock Changes
+    runs-on: ubuntu-20.04
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Yarn Lock Changes
+        uses: Simek/yarn-lock-changes@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          collapsibleThreshold: '25'
+          failOnDowngrade: 'false'
+          path: 'yarn.lock'
+          updateComment: 'true'
