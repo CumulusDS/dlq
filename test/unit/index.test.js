@@ -7,7 +7,10 @@ import readline from "readline";
 import main from "../../src";
 
 jest.mock("minimist");
-jest.mock("fs", () => ({ promises: { writeFile: jest.fn().mockResolvedValue() }, createReadStream: jest.fn() }));
+jest.mock("fs", () => ({
+  promises: { writeFile: jest.fn().mockResolvedValue(), mkdir: jest.fn() },
+  createReadStream: jest.fn()
+}));
 jest.mock("readline");
 jest.mock("aws-sdk");
 
@@ -33,21 +36,23 @@ describe("main", () => {
   // Lambda mocks
   let invoke: JestMockFn<any, any>; // flowlint-line unclear-type:off
   let Lambda: JestMockFn<any, any>; // flowlint-line unclear-type:off
+  let getFunction: JestMockFn<any, any>; // flowlint-line unclear-type:off
 
   beforeEach(() => {
     exit = jest.spyOn(process, "exit").mockImplementation(() => {});
 
     invoke = jest.fn(() => ({ promise: jest.fn().mockResolvedValue({ StatusCode: 202 }) }));
+    getFunction = jest.fn(() => ({
+      promise: jest.fn().mockResolvedValue({
+        Configuration: {
+          DeadLetterConfig: { TargetArn: "target-arn" },
+          Timeout: 6
+        }
+      })
+    }));
     Lambda = jest.fn(() => ({
       invoke,
-      getFunction: jest.fn(() => ({
-        promise: jest.fn().mockResolvedValue({
-          Configuration: {
-            DeadLetterConfig: { TargetArn: "target-arn" },
-            Timeout: 6
-          }
-        })
-      }))
+      getFunction
     }));
     AWS.Lambda = Lambda;
 
@@ -58,7 +63,7 @@ describe("main", () => {
         Messages: [{ ReceiptHandle: "receipt-handle", MessageId: "123", MessageAttributes: {}, Body: "{}" }]
       })
       // $FlowFixMe
-      .mockResolvedValueOnce({});
+      .mockResolvedValue({});
     receiveMessage = jest.fn(() => ({
       promise
     }));
@@ -207,8 +212,8 @@ describe("main", () => {
 
     describe("failing", () => {
       beforeEach(() => {
-        receiveMessage.mockImplementation(() => ({
-          promise: jest.fn().mockRejectedValue(new Error("sqs.receiveMessage failed"))
+        getFunction.mockImplementation(() => ({
+          promise: jest.fn().mockRejectedValue(new Error("failed"))
         }));
       });
 

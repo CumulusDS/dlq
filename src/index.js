@@ -103,7 +103,8 @@ async function redriveMessageToLambda(
   sqs: AWS.SQS,
   FunctionName: string,
   QueueUrl: string,
-  log: string
+  log: string,
+  retireMessage: ({ ReceiptHandle: string }) => Promise<void>
 ) {
   const InvocationType = log == null ? "Event" : "RequestResponse";
   const LogType = log == null ? "None" : "Tail";
@@ -117,17 +118,24 @@ async function redriveMessageToLambda(
       ])
     );
     if (result.FunctionError == null) {
-      await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+      await retireMessage(message);
     }
   } else if (result.StatusCode === 202) {
-    await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+    await retireMessage(message);
   } else {
     console.error(result);
   }
 }
 
-// $FlowFixMe
-async function redriveMessageToSqs(message: any, sqs: AWS.SQS, QueueUrl: string, primaryQueue: ?string, log: ?string) {
+async function redriveMessageToSqs(
+  // $FlowFixMe[unclear-type]
+  message: { MessageId: string, ReceiptHandle: string, MessageAttributes: Object, Body: string },
+  sqs: AWS.SQS,
+  QueueUrl: string,
+  primaryQueue: ?string,
+  log: ?string,
+  retireMessage: ({ ReceiptHandle: string }) => Promise<void>
+) {
   const result = await sqs
     .sendMessage({
       MessageBody: message.Body,
@@ -138,7 +146,7 @@ async function redriveMessageToSqs(message: any, sqs: AWS.SQS, QueueUrl: string,
   if (log != null) {
     await fsp.writeFile(`${log}${message.MessageId}.log`, `Redrive\n${result.MessageId}`);
   }
-  await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+  await retireMessage(message);
 }
 
 async function redriveMessage(
@@ -149,12 +157,13 @@ async function redriveMessage(
   queueUrl: string,
   functionName: ?string,
   log: string,
-  primaryQueue: ?string
+  primaryQueue: ?string,
+  retireMessage: ({ ReceiptHandle: string }) => Promise<void>
 ) {
   if (functionName != null) {
-    await redriveMessageToLambda(message, lambda, sqs, functionName, queueUrl, log);
+    await redriveMessageToLambda(message, lambda, sqs, functionName, queueUrl, log, retireMessage);
   } else {
-    await redriveMessageToSqs(message, sqs, queueUrl, primaryQueue, log);
+    await redriveMessageToSqs(message, sqs, queueUrl, primaryQueue, log, retireMessage);
   }
 }
 
@@ -167,14 +176,25 @@ function parallelGenerateSqsMessage(sqs: AWS.SQS, params: AWS.SQS.Types.ReceiveM
 }
 
 export default async function(options: Options) {
-  function handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain) {
+  function handleMessage(
+    space,
+    redrive,
+    lambda,
+    sqs,
+    QueueUrl,
+    FunctionName,
+    log,
+    primaryQueue,
+    drain,
+    retireMessage: ({ ReceiptHandle: string }) => Promise<void>
+  ) {
     // flowlint-next-line unclear-type:off
     return async (message: Object) => {
       console.log(JSON.stringify({ ...message, skipped: false }, null, parseInt(space, 10)));
       if (redrive) {
-        await redriveMessage(message, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue);
+        await redriveMessage(message, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, retireMessage);
       } else if (drain) {
-        await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+        await retireMessage(message);
       }
     };
   }
@@ -250,13 +270,18 @@ export default async function(options: Options) {
               Deadline,
               VisibilityTimeout
             },
-            64
+            32
           )
         : await generateFileMessages(fromFile);
 
+    const noop = () => Promise.resolve(undefined);
+    const retireSqsMessage = message => sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+
+    const retireMessage: ({ ReceiptHandle: string }) => Promise<void> = fromFile == null ? retireSqsMessage : noop;
+
     if (log) {
       // $FlowFixMe
-      await fsp.mkdir(path.dirname(`${log}x`), { recursive: true });
+      await fsp.mkdir(path.dirname(`${log}`), { recursive: true });
     }
     const progress = new cliProgress.SingleBar({
       format: "Progress | {bar} | {value}/{total} |  actual {actualRate}/s | target {rate}/s",
@@ -266,16 +291,25 @@ export default async function(options: Options) {
     });
     let total = 0;
     const control = aimd({ a: rate / 20, b: 0.5, w: rate, deadline: Deadline });
-    const handler = handleMessage(space, redrive, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, drain);
+    const handler = handleMessage(
+      space,
+      redrive,
+      lambda,
+      sqs,
+      QueueUrl,
+      FunctionName,
+      log,
+      primaryQueue,
+      drain,
+      retireMessage
+    );
     progress.start(1, 0, { rate: rate * 1000, actualRate: 0 });
     const start = Date.now();
     for await (const message of messages) {
       if (invertedMatch && JSON.stringify(message).includes(invertedMatch)) {
         console.log(JSON.stringify({ ...message, skipped: true }, null, parseInt(space, 10)));
         promises.push(
-          sqs
-            .deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle })
-            .promise()
+          retireMessage(message.ReceiptHandle)
             // eslint-disable-next-line no-loop-func
             .then(() => {
               const elapsed = (Date.now() - start) / 1000;
