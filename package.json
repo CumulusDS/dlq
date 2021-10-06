@@ -11,7 +11,7 @@
     "cli"
   ],
   "engines": {
-    "node": ">= 10"
+    "node": ">=11.0"
   },
   "main": "lib/index.js",
   "src": [
