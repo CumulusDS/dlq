@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Install Node ${{ matrix.node }}
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node }}
       - name: Install NPM credentials
@@ -59,7 +59,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Install Node 14
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: 14
       - name: Install NPM credentials
