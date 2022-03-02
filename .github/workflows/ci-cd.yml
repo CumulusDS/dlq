@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install Node ${{ matrix.node }}
         uses: actions/setup-node@v3
         with:
@@ -57,7 +57,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install Node 14
         uses: actions/setup-node@v3
         with:
@@ -89,7 +89,7 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Yarn Lock Changes
         uses: Simek/yarn-lock-changes@main
         with:
