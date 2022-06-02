@@ -255,8 +255,8 @@ export default async function(options: Options) {
     const lambda = new AWS.Lambda({ region, httpOptions: { timeout: Timeout * 1000 + 1000 } });
 
     // Deadline for starting invocation
-    const VisibilityTimeout = time - Timeout;
-    const Deadline = now.getTime() + VisibilityTimeout * 1000;
+    const VisibilityTimeout = time + Timeout;
+    const Deadline = now.getTime() + time * 1000;
 
     const promises = [];
 
