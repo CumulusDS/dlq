@@ -11,7 +11,7 @@
     "cli"
   ],
   "engines": {
-    "node": "^12.13.0 || ^14.15.0 || >=15.0.0"
+    "node": "^14.15.0 || >=16.0.0 || >=18.0.0 || >=19.0.0"
   },
   "main": "lib/index.js",
   "src": [
@@ -25,12 +25,16 @@
     "build:license-checker": "license-checker --csv --out var/licenses.csv",
     "clean": "shx rm -rf lib",
     "dlq": "bin/dlq.js",
+    "git:commit": "git add package.json .yarn/versions && git commit -m v${npm_package_version}",
     "git:push": "git push --follow-tags",
-    "publish:patch": "run-s version:patch git:push",
-    "publish:minor": "run-s version:minor git:push",
-    "publish:major": "run-s version:major git:push",
+    "git:tag": "git tag -a v${npm_package_version} -m v${npm_package_version}",
+    "publish:major": "yarn version major && yarn publish:sync",
+    "publish:minor": "yarn version minor && yarn publish:sync",
+    "publish:patch": "yarn version patch && yarn publish:sync",
+    "publish:sync": "yarn run git:commit && yarn run git:tag && yarn git:push",
     "sites": "node bin/sites.js",
-    "test": "run-p --aggregate-output test:**",
+    "test": "yarn run test:flow && yarn run test:jest && yarn run test:lint && yarn run test:prettier",
+    "test:flow": "yarn run test:flow:coverage-report && yarn run test:flow:status",
     "test:flow:coverage-report": "flow-coverage-report -i 'src/**/*.js' -x 'test/**/*.js' -t html -t text --threshold 63 --output-dir var/coverage/flow",
     "test:flow:status": "flow status",
     "test:jest": "jest --color",
@@ -88,12 +92,12 @@
     "git-describe": "^4.0.4",
     "jest": "^26.0.0",
     "license-checker": "^25.0.1",
-    "npm-run-all": "^4.1.3",
     "prettier": "^1.14.0",
     "shx": "^0.3.2"
   },
   "resolutions": {
     "kind-of": ">=6.0.3",
     "set-value": "^4.0.1"
-  }
+  },
+  "packageManager": "yarn@3.5.0"
 }
