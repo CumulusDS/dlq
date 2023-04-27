@@ -1,26 +1,22 @@
-name: ci-cd
+name: Publish
 on:
-  push:
-    branches:
-      - '**/*'
-  pull_request:
   release:
-    types: [released]
+    types: [ released ]
+env:
+  NODE_VERSION: 14
 jobs:
-  unit:
-    name: unit tests, node ${{ matrix.node }}
+  publish:
+    name: Publish
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        node: [14, 16, 18, 19]
+    needs: unit
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Install Node ${{ matrix.node }}
+      - name: Install Node ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v3
         with:
-          node-version: ${{ matrix.node }}
+          node-version: ${{ env.NODE_VERSION }}
       - name: Get yarn cache
         id: yarn-cache
         run: echo "::set-output name=dir::$(yarn cache dir)"
@@ -33,13 +29,11 @@ jobs:
             ${{ runner.os }}-yarn-
       - name: Install NPM Packages
         run: yarn install --immutable
-      - name: Check licenses
-        run: yarn build:license-checker
-      - name: Test
-        run: yarn test
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: var
-          path: var
-        if: always()
+      - name: Install NPM credentials
+        run: yarn config set npmAuthToken $NPM_TOKEN --home
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN_PUBLISH }}
+      - name: Build
+        run: yarn build
+      - name: Publish
+        run: npm publish
