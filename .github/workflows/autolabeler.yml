@@ -1,8 +1,6 @@
 name: PR AutoLabeler
-
 on:
   pull_request_target:
-
 jobs:
   label:
     name: Auto Labeler
