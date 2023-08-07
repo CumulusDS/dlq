@@ -88,7 +88,7 @@
     "eslint-plugin-prettier": "^2.6.0",
     "flow-bin": "^0.112.0",
     "flow-copy-source": "^2.0.9",
-    "flow-typed": "^3.2.1",
+    "flow-typed": "^3.9.0",
     "git-describe": "^4.0.4",
     "jest": "^26.0.0",
     "license-checker": "^25.0.1",
