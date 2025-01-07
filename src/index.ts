@@ -106,9 +106,7 @@ export type Options = {
 async function redriveMessageToLambda(
   message: SQS.Message,
   lambda: AWS.Lambda,
-  sqs: AWS.SQS,
   FunctionName: string,
-  QueueUrl: string,
   log: string | null,
   retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
 ) {
@@ -157,14 +155,13 @@ async function redriveMessage(
   message: SQS.Message & { ReceiptHandle: string },
   lambda: AWS.Lambda,
   sqs: AWS.SQS,
-  queueUrl: string,
   functionName: string | null | undefined,
   log: string | null,
   primaryQueue: string | null,
   retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
 ) {
   if (functionName != null) {
-    await redriveMessageToLambda(message, lambda, sqs, functionName, queueUrl, log, retireMessage);
+    await redriveMessageToLambda(message, lambda, functionName, log, retireMessage);
   } else {
     await redriveMessageToSqs(message, sqs, primaryQueue as string, log, retireMessage);
   }
@@ -185,7 +182,6 @@ export default async function (options: Options): Promise<void> {
     redrive: boolean,
     lambda: Lambda,
     sqs: SQS,
-    QueueUrl: string,
     FunctionName: string | null,
     log: string | null,
     primaryQueue: string | null,
@@ -195,7 +191,7 @@ export default async function (options: Options): Promise<void> {
     return async (message: SQS.Message & { ReceiptHandle: string }) => {
       console.log(JSON.stringify({ ...message, skipped: false }, null, parseInt(space, 10)));
       if (redrive) {
-        await redriveMessage(message, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, retireMessage);
+        await redriveMessage(message, lambda, sqs, FunctionName, log, primaryQueue, retireMessage);
       } else if (drain) {
         await retireMessage(message);
       }
@@ -256,6 +252,7 @@ export default async function (options: Options): Promise<void> {
         ? await getLambdaConfiguration(new AWS.Lambda({ region }), sqs, FunctionName)
         : await getSqsConfiguration(sqs, primaryQueue as string);
     if (!QueueUrl) {
+      // noinspection ExceptionCaughtLocallyJS
       throw new Error("No queue url");
     }
 
@@ -280,7 +277,7 @@ export default async function (options: Options): Promise<void> {
             },
             32,
           )
-        : await generateFileMessages(fromFile);
+        : generateFileMessages(fromFile);
 
     const noop = () => Promise.resolve();
     const retireSqsMessage = async (message: SQS.Message & { ReceiptHandle: string }): Promise<void> => {
@@ -301,18 +298,7 @@ export default async function (options: Options): Promise<void> {
     });
     let total = 0;
     const control = aimd({ a: rate / 20, b: 0.5, w: rate, deadline: Deadline });
-    const handler = handleMessage(
-      space,
-      redrive,
-      lambda,
-      sqs,
-      QueueUrl,
-      FunctionName,
-      log,
-      primaryQueue,
-      drain,
-      retireMessage,
-    );
+    const handler = handleMessage(space, redrive, lambda, sqs, FunctionName, log, primaryQueue, drain, retireMessage);
     progress.start(1, 0, { rate: rate * 1000, actualRate: 0 });
     const start = Date.now();
     for await (const message of messages) {
