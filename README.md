@@ -1,4 +1,4 @@
-# DQL
+# DLQ
 
 Maybe you have an AWS SQS or asynchronously triggered Lambda Function with a Dead Letter Queue (DLQ) configured to catch errors. Good! You are demonstrating forethought and a good architecture. Perhaps something happened, and now you now have some messages in your DLQ. It happens to the best of us. Maybe your customers are calling you, wanting to make sure that their messages are not dead. And now you are scratching your head wondering what to do.
 

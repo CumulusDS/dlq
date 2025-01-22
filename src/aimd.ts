@@ -1,21 +1,16 @@
-// @flow
-
 import util from "util";
 
 const setTimeoutPromise = util.promisify(setTimeout);
 
 type Params = {
   // Additive factor (invocations per millisecond) for increasing function issue rate upon success
-  a: number,
-
+  a: number;
   // Multiplicative factor for decreasing function issue rate upon error
-  b: number,
-
+  b: number;
   // Initial function issue rate (invocations per millisecond)
-  w: number,
-
+  w: number;
   // Retry until deadline (milliseconds since epoch) would be exceeded
-  deadline: number
+  deadline: number;
 };
 
 export class Timeout extends Error {
@@ -33,7 +28,7 @@ export default function aimd(params: Params) {
   let n = 0;
   const start = Date.now();
 
-  return async function invoke<T>(fun: (w: number) => Promise<T>): Promise<T> {
+  return async function invoke<T>(fun: (arg: number) => Promise<T>): Promise<T> {
     let now = Date.now();
     let elapsed = now - start;
     let target = elapsed * w;
@@ -48,7 +43,7 @@ export default function aimd(params: Params) {
         const result = await fun(w);
         w += a;
         return result;
-      } catch (err) {
+      } catch (err: unknown) {
         w *= b;
         now = Date.now();
         elapsed = now - start;
@@ -56,10 +51,10 @@ export default function aimd(params: Params) {
         shortfall = n - target;
         delay = shortfall / w;
         if (deadline <= now + delay) {
-          console.error("Stopping after error.", err.message);
+          console.error("Stopping after error.", (err as Error).message);
           throw err;
         }
-        console.error("Retrying after error.", err.message);
+        console.error("Retrying after error.", (err as Error).message);
       }
     }
     throw new Timeout();

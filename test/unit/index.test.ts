@@ -1,5 +1,4 @@
-// @flow
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import minimist from "minimist";
 import AWS from "aws-sdk";
 import { promises as fs, createReadStream } from "fs";
@@ -8,14 +7,14 @@ import main from "../../src";
 
 jest.mock("minimist");
 jest.mock("fs", () => ({
-  promises: { writeFile: jest.fn().mockResolvedValue(), mkdir: jest.fn() },
-  createReadStream: jest.fn()
+  promises: { writeFile: jest.fn().mockResolvedValue(undefined), mkdir: jest.fn() },
+  createReadStream: jest.fn(),
 }));
 jest.mock("readline");
 jest.mock("aws-sdk");
 
 describe("main", () => {
-  let exit: JestMockFn<any, any>; // flowlint-line unclear-type:off
+  let exit: jest.MockedFunction<any>;
 
   // SQS mocks
   const deleteMessage = jest.fn(() => ({ promise: jest.fn() }));
@@ -23,36 +22,36 @@ describe("main", () => {
     promise: jest.fn().mockResolvedValue({
       Attributes: {
         RedrivePolicy: JSON.stringify({
-          deadLetterTargetArn: "arn:aws:sqs:us-east-1:000000000000:MyService-prod-MyQueue"
-        })
-      }
-    })
+          deadLetterTargetArn: "arn:aws:sqs:us-east-1:000000000000:MyService-prod-MyQueue",
+        }),
+      },
+    }),
   }));
   const getQueueUrl = jest.fn(() => ({ promise: jest.fn().mockResolvedValue({ QueueUrl: "queue" }) }));
-  let sendMessage: JestMockFn<any, any>; // flowlint-line unclear-type:off
-  let receiveMessage: JestMockFn<any, any>; // flowlint-line unclear-type:off
-  let SQS: JestMockFn<any, any>; // flowlint-line unclear-type:off
+  let sendMessage: jest.MockedFunction<any>;
+  let receiveMessage: jest.MockedFunction<any>;
+  let SQS: jest.MockedFunction<any>;
 
   // Lambda mocks
-  let invoke: JestMockFn<any, any>; // flowlint-line unclear-type:off
-  let Lambda: JestMockFn<any, any>; // flowlint-line unclear-type:off
-  let getFunction: JestMockFn<any, any>; // flowlint-line unclear-type:off
+  let invoke: jest.MockedFunction<any>;
+  let Lambda: jest.MockedFunction<any>;
+  let getFunction: jest.MockedFunction<any>;
 
   beforeEach(() => {
-    exit = jest.spyOn(process, "exit").mockImplementation(() => {});
+    exit = jest.spyOn(process, "exit").mockImplementation(() => ({}) as never);
 
     invoke = jest.fn(() => ({ promise: jest.fn().mockResolvedValue({ StatusCode: 202 }) }));
     getFunction = jest.fn(() => ({
       promise: jest.fn().mockResolvedValue({
         Configuration: {
           DeadLetterConfig: { TargetArn: "target-arn" },
-          Timeout: 6
-        }
-      })
+          Timeout: 6,
+        },
+      }),
     }));
     Lambda = jest.fn(() => ({
       invoke,
-      getFunction
+      getFunction,
     }));
     AWS.Lambda = Lambda;
 
@@ -60,19 +59,18 @@ describe("main", () => {
     const promise = jest
       .fn()
       .mockResolvedValueOnce({
-        Messages: [{ ReceiptHandle: "receipt-handle", MessageId: "123", MessageAttributes: {}, Body: "{}" }]
+        Messages: [{ ReceiptHandle: "receipt-handle", MessageId: "123", MessageAttributes: {}, Body: "{}" }],
       })
-      // $FlowFixMe
       .mockResolvedValue({});
     receiveMessage = jest.fn(() => ({
-      promise
+      promise,
     }));
     SQS = jest.fn(() => ({
       receiveMessage,
       getQueueUrl,
       deleteMessage,
       getQueueAttributes,
-      sendMessage
+      sendMessage,
     }));
     AWS.SQS = SQS;
   });
@@ -82,7 +80,8 @@ describe("main", () => {
 
   describe("with no options", () => {
     beforeEach(() => {
-      // $FlowFixMe
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
       minimist.mockImplementation(() => ({}));
     });
 
@@ -96,7 +95,8 @@ describe("main", () => {
     const region = "us-east-1";
     const fun = "service-stage-function";
     beforeEach(() => {
-      // $FlowFixMe
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
       minimist.mockImplementation(() => ({ region, fun }));
     });
 
@@ -107,7 +107,8 @@ describe("main", () => {
 
     describe("redrive", () => {
       beforeEach(() => {
-        // $FlowFixMe
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-expect-error
         minimist.mockImplementation(() => ({ region, fun, redrive: true }));
       });
 
@@ -118,7 +119,7 @@ describe("main", () => {
           FunctionName: "service-stage-function",
           InvocationType: "Event",
           LogType: "None",
-          Payload: "{}"
+          Payload: "{}",
         });
       });
 
@@ -142,19 +143,27 @@ describe("main", () => {
 
       describe("log", () => {
         beforeEach(() => {
-          // $FlowFixMe
-          minimist.mockImplementation(() => ({ region, fun, redrive: true, log: "prefix-" }));
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-expect-error
+          minimist.mockImplementation(() => ({
+            region,
+            fun,
+            redrive: true,
+            log: "prefix-",
+          }));
 
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-expect-error
           AWS.Lambda = jest.fn(() => ({
             invoke: jest.fn(() => ({ promise: jest.fn().mockResolvedValue({ StatusCode: 200, LogResult: "LOGGED" }) })),
             getFunction: jest.fn(() => ({
               promise: jest.fn().mockResolvedValue({
                 Configuration: {
                   DeadLetterConfig: { TargetArn: "target-arn" },
-                  Timeout: 6
-                }
-              })
-            }))
+                  Timeout: 6,
+                },
+              }),
+            })),
           }));
         });
 
@@ -171,20 +180,22 @@ describe("main", () => {
 
         describe("with Function Error", () => {
           beforeEach(() => {
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-expect-error
             AWS.Lambda = jest.fn(() => ({
               invoke: jest.fn(() => ({
                 promise: jest
                   .fn()
-                  .mockResolvedValue({ StatusCode: 200, LogResult: "LOGGED", FunctionError: "Unhandled" })
+                  .mockResolvedValue({ StatusCode: 200, LogResult: "LOGGED", FunctionError: "Unhandled" }),
               })),
               getFunction: jest.fn(() => ({
                 promise: jest.fn().mockResolvedValue({
                   Configuration: {
                     DeadLetterConfig: { TargetArn: "target-arn" },
-                    Timeout: 6
-                  }
-                })
-              }))
+                    Timeout: 6,
+                  },
+                }),
+              })),
             }));
           });
 
@@ -199,7 +210,8 @@ describe("main", () => {
 
     describe("drain", () => {
       beforeEach(() => {
-        // $FlowFixMe
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-expect-error
         minimist.mockImplementation(() => ({ region, fun, drain: true }));
       });
 
@@ -213,7 +225,7 @@ describe("main", () => {
     describe("failing", () => {
       beforeEach(() => {
         getFunction.mockImplementation(() => ({
-          promise: jest.fn().mockRejectedValue(new Error("failed"))
+          promise: jest.fn().mockRejectedValue(new Error("failed")),
         }));
       });
 
@@ -228,7 +240,8 @@ describe("main", () => {
     const region = "us-east-1";
     const queue = "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue";
     beforeEach(() => {
-      // $FlowFixMe
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
       minimist.mockImplementation(() => ({ region, queue }));
     });
 
@@ -237,7 +250,7 @@ describe("main", () => {
       const sqs = new AWS.SQS();
       expect(sqs.getQueueAttributes).toBeCalledWith({
         AttributeNames: ["RedrivePolicy"],
-        QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue"
+        QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue",
       });
     });
 
@@ -248,7 +261,8 @@ describe("main", () => {
 
     describe("redriving", () => {
       beforeEach(() => {
-        // $FlowFixMe
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-expect-error
         minimist.mockImplementation(() => ({ region, queue, redrive: true }));
       });
 
@@ -258,13 +272,14 @@ describe("main", () => {
         expect(sqs.sendMessage).toBeCalledWith({
           MessageAttributes: {},
           MessageBody: "{}",
-          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue"
+          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue",
         });
       });
 
       describe("logging", () => {
         beforeEach(() => {
-          // $FlowFixMe
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-expect-error
           minimist.mockImplementation(() => ({ region, queue, redrive: true, log: "prefix-" }));
         });
 
@@ -278,7 +293,7 @@ describe("main", () => {
     describe("without Redrive Policy", () => {
       beforeEach(() => {
         getQueueAttributes.mockImplementationOnce(() => ({
-          promise: jest.fn().mockResolvedValueOnce({})
+          promise: jest.fn().mockResolvedValueOnce({}),
         }));
       });
       it("has error exit status", async () => {
@@ -292,9 +307,9 @@ describe("main", () => {
         getQueueAttributes.mockImplementationOnce(() => ({
           promise: jest.fn().mockResolvedValueOnce({
             Attributes: {
-              RedrivePolicy: JSON.stringify({})
-            }
-          })
+              RedrivePolicy: JSON.stringify({}),
+            },
+          }),
         }));
       });
       it("has error exit status", async () => {
@@ -311,43 +326,43 @@ describe("main", () => {
 
     describe("redrive", () => {
       beforeEach(() => {
-        // $FlowFixMe
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-expect-error
         minimist.mockImplementation(() => ({ region, queue, fromFile, redrive: true }));
-        // $FlowFixMe
         readline.createInterface = jest.fn().mockReturnValue([
           Promise.resolve(
             JSON.stringify({
               MessageId: "1",
               ReceiptHandle: "r1",
               Body: "Hello World",
-              MessageAttributes: {}
-            })
+              MessageAttributes: {},
+            }),
           ),
           Promise.resolve(
             JSON.stringify({
               MessageId: "2",
               ReceiptHandle: "r2",
               Body: "Hello World 2",
-              MessageAttributes: {}
-            })
+              MessageAttributes: {},
+            }),
           ),
           Promise.resolve(
             JSON.stringify({
               MessageId: "3",
               ReceiptHandle: "r3",
               Body: "Goodbye World",
-              MessageAttributes: {}
-            })
-          )
+              MessageAttributes: {},
+            }),
+          ),
         ]);
         getQueueAttributes.mockImplementationOnce(() => ({
           promise: jest.fn().mockResolvedValueOnce({
             Attributes: {
               RedrivePolicy: JSON.stringify({
-                deadLetterTargetArn: "arn:aws:sqs:us-east-1:000000000000:MyService-prod-MyQueue"
-              })
-            }
-          })
+                deadLetterTargetArn: "arn:aws:sqs:us-east-1:000000000000:MyService-prod-MyQueue",
+              }),
+            },
+          }),
         }));
       });
 
@@ -359,17 +374,17 @@ describe("main", () => {
         expect(sqs.sendMessage).toHaveBeenNthCalledWith(1, {
           MessageAttributes: {},
           MessageBody: "Hello World",
-          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue"
+          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue",
         });
         expect(sqs.sendMessage).toHaveBeenNthCalledWith(2, {
           MessageAttributes: {},
           MessageBody: "Hello World 2",
-          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue"
+          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue",
         });
         expect(sqs.sendMessage).toHaveBeenNthCalledWith(3, {
           MessageAttributes: {},
           MessageBody: "Goodbye World",
-          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue"
+          QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue",
         });
       });
     });

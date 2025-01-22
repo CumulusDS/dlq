@@ -5,7 +5,6 @@
 - `dist/` is for compiled modules that can be used with other systems.
 - `doc/` is for markdown documentation of the project and related concepts.
 - `env/` is for any environment that is needed for testing
-- `flow-typed/` has library definitions for flow. The `flow-typed/npm` files are generated or community-supplied files. Nevertheless, these files must be included in source control.
 - `lib/` is the compiled (portable) library code that will be linked into dependent projects.
 - `scripts/` is for any utility scripts used for development of the module.
 - `src/` has the production source files. The files will be compiled by babel.
@@ -100,8 +99,6 @@ Several commands are defined by the package.json scripts.
 
 `yarn test` runs the comprehensive set of automated tests. This includes the jest unit test, flow and eslint checks.
 
-`yarn flow:status` checks for flow type and lint errors. It is one of the checks included in `yarn test`.
-
 `yarn git:push` pushes commits and tags to GitHub.
 
 `yarn test:unit` runs the jest unit tests. It is one of the checks included in `yarn test`.
@@ -162,17 +159,9 @@ A project-local installation is used, instead of a global installation. [Prettie
 
 The project Prettier configuration file is consistently used, instead of command-line configuration. Centralizing follows the "don't repeat yourself" rule of thumb. Centralization ensures that scripts, IDE configuration and any future method for invoking Prettier stay synchronized with the project's style standard.
 
-## Flow
-
-Flow is configured to use [flow-typed](https://github.com/flowtype/flow-typed) repository of libdefs (type definitions). These libdefs are be checked-into this repository because flow-typed libdefs are not pinned by a package version. It is undesirable to receive a new libdef for a dependency that has not changed, because [it could introduce a spurrious type-check failure.](https://github.com/flowtype/flow-typed/wiki/FAQs#why-do-i-need-to-commit-the-libdefs-that-flow-typed-installs-for-my-project) To maintain the flow-typed libdefs, run `yarn flow-typed install` after changing the package dependencies.
-
-The eslint-plugin-flowtype package integrates ESLint with Flow.
-
-The WebStorm IDE uses flow to improve navigation, code completion and type hinting. It can also show type-checking errors inline, just like syntax or lint errors. [Configure WebStorm for Flow](https://blog.jetbrains.com/webstorm/2016/11/using-flow-in-webstorm/) by using Preferences / Languages & Frameworks / Javascript. Set the language version to Flow and enable "Type checking". ![WebStorm Flow Configuration](webstorm-flow.png)
-
 ### Lint
 
-[Flow’s linter](https://flow.org/en/docs/linting/) encourages developers to add tight type annotations. For example, it can be convenient to use the `any` type when a mock will only satisfy part of an interface. In this case, the tested function has an `Axios` instance argument, but we know that the function only really depends on a single method, `post`. When listing is enabled, we see a diagnostic for `any`. In this case, we can confirm that we think that we know what we’re doing by suppressing the lint diagnostic with a `flowlint-line` directive.
+Typescript encourages developers to add tight type annotations. For example, it can be convenient to use the `any` type when a mock will only satisfy part of an interface. In this case, the tested function has an `Axios` instance argument, but we know that the function only really depends on a single method, `post`. When listing is enabled, we see a diagnostic for `any`. In this case, we can confirm that we think that we know what we’re doing by suppressing the lint diagnostic with a `flowlint-line` directive.
 
 ```js
 const client: any = { post }; // flowlint-line unclear-type:off
@@ -186,23 +175,13 @@ Babel compiles the project to prepares Node-compatible javascript. The [babelrc]
 
 High unit test coverage is essential for the sustainability of the software systems that we create. Unit test coverage gives us the ability to confidently refactor our software modules. High unit test coverage is a good indication that SOLID principles are being adhered to in the code-base; when getting test coverage for a module is hard, then it’s usually a sign that the module is serving more than one concern or is too tightly coupled to other modules. Test coverage is essential for software modules that will be reused in more than one context.
 
-[Flow](https://flow.org/en/) is used to declare interface types. Libraries should use static type checking, because it provides users with helpful auto-completions in the IDE. These hints reduce typos and make it easier to discover the library's functionality and correctly use its interface. Type checking can also expose interface errors that are undetected in unit testing due to mocks.
+Typescript is used to declare interface types. Libraries should use static type checking, because it provides users with helpful auto-completions in the IDE. These hints reduce typos and make it easier to discover the library's functionality and correctly use its interface. Type checking can also expose interface errors that are undetected in unit testing due to mocks.
 
 To invoke the test suite, run `yarn test`. This runs ESLint, the Jest unit tests and the Flow type checker.
 
 ## ESLint
 
 ESLint is used to enforce the [Airbnb Style Guid](https://github.com/airbnb/javascript). The burden of the style guidelines are eased through automated correction. The Prettier package helps the IDE automatically improve the formatting of the source code. The husky git hook automatically corrects some other ESLint issues when adding.
-
-## Flow
-
-The eslint-plugin-flowtype package integrates ESLint with Flow.
-
-The WebStorm IDE uses flow to improve navigation, code completion and type hinting. It can also show type-checking errors inline, just like syntax or lint errors. [Configure WebStorm for Flow](https://blog.jetbrains.com/webstorm/2016/11/using-flow-in-webstorm/) by using Preferences / Languages & Frameworks / Javascript. Set the language version to Flow and enable "Type checking". ![WebStorm Flow Configuration](webstorm-flow.png)
-
-### flow-typed
-
-Community-built library definitions are provided by the [flow-typed](https://github.com/flowtype/flow-typed) package. These library definitions are be checked-into this repository under flow-typed/npm because flow-typed libdefs are not pinned by a package version. It is undesirable to receive a new libdef for a dependency that has not changed, because [it could introduce a spurrious type-check failure.](https://github.com/flowtype/flow-typed/wiki/FAQs#why-do-i-need-to-commit-the-libdefs-that-flow-typed-installs-for-my-project) To maintain the flow-typed libdefs, run `yarn flow-typed install` after changing the package dependencies.
 
 ### Lint
 

@@ -1,17 +1,8 @@
-// @flow
-
 import AWS from "aws-sdk";
 import receiveMessage from "./receive-message";
+import { Params } from "./types";
 
-export type Params = {|
-  ...AWS.SQS.Types.ReceiveMessageRequest,
-  Deadline: Date
-|};
-
-export default async function* generateSqsMessages(
-  sqs: AWS.SQS,
-  params: AWS.SQS.Types.ReceiveMessageRequest
-): AsyncIterator<AWS.SQS.Message> {
+export default async function* generateSqsMessages(sqs: AWS.SQS, params: Params): AsyncGenerator<AWS.SQS.Message> {
   const { Deadline, ...sqsParams } = params;
 
   async function receive() {

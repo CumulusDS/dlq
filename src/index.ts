@@ -1,15 +1,18 @@
-// @flow
 // Command Line Interface generator for Dead Letter Queues
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error
 import mergeRace from "@async-generator/merge-race";
 import path from "path";
 import parseArgs from "minimist";
-import AWS from "aws-sdk";
+import AWS, { Lambda, SQS } from "aws-sdk";
 import { promises as fsp } from "fs";
 import cliProgress from "cli-progress";
+import { GetFunctionResponse } from "aws-sdk/clients/lambda";
 import generateSqsMessages from "./generate-sqs-messages";
 import aimd from "./aimd";
 import generateFileMessages from "./generate-file-messages";
+import { Params } from "./types";
 
 function printHelp() {
   console.log(
@@ -38,37 +41,41 @@ function printHelp() {
       "\tNote that --redrive can get stuck in an infinite loop, endlessly redriving, if the events are failing.\n" +
       "\n" +
       "\tExample:\n" +
-      "\t$awsudo -u sts-prod yarn --silent dlq --region us-east-2 --function-name MyService-prod-myFunction --redrive\n"
+      "\t$awsudo -u sts-prod yarn --silent dlq --region us-east-2 --function-name MyService-prod-myFunction --redrive\n",
   );
 }
 
-function decodeSqsArn(arn) {
+function decodeSqsArn(arn: string) {
   const [, , , , QueueOwnerAWSAccountId, QueueName] = arn.split(":");
   return { QueueOwnerAWSAccountId, QueueName };
 }
 
-async function getQueueUrl(sqs, arn) {
+async function getQueueUrl(sqs: SQS, arn: string) {
   const { QueueOwnerAWSAccountId, QueueName } = decodeSqsArn(arn);
   const { QueueUrl } = await sqs.getQueueUrl({ QueueName, QueueOwnerAWSAccountId }).promise();
   return QueueUrl;
 }
 
-async function getLambdaConfiguration(lambda, sqs, FunctionName) {
+async function getLambdaConfiguration(lambda: Lambda, sqs: SQS, FunctionName: string) {
+  const funcResponse: GetFunctionResponse = await lambda.getFunction({ FunctionName }).promise();
+  if (!funcResponse || !funcResponse.Configuration || !funcResponse.Configuration.DeadLetterConfig?.TargetArn) {
+    throw new Error(`No function or DLQ '${FunctionName}'`);
+  }
   const {
     Configuration: {
       Timeout,
-      DeadLetterConfig: { TargetArn }
-    }
-  } = await lambda.getFunction({ FunctionName }).promise();
+      DeadLetterConfig: { TargetArn },
+    },
+  } = funcResponse;
   const QueueUrl = await getQueueUrl(sqs, TargetArn);
   return { Timeout, QueueUrl };
 }
 
-async function getSqsConfiguration(sqs, QueueUrl) {
+async function getSqsConfiguration(sqs: SQS, QueueUrl: string) {
   const { Attributes } = await sqs
     .getQueueAttributes({
       QueueUrl,
-      AttributeNames: ["RedrivePolicy"]
+      AttributeNames: ["RedrivePolicy"],
     })
     .promise();
   const RedrivePolicy = Attributes?.RedrivePolicy;
@@ -83,28 +90,25 @@ async function getSqsConfiguration(sqs, QueueUrl) {
 }
 
 export type Options = {
-  region?: string,
-  drain?: boolean,
-  rate?: number,
-  redrive?: boolean,
-  fun?: string,
-  queue?: string,
-  space?: string,
-  time?: string,
-  log?: string,
-  fromFile?: string,
-  invertedMatch?: string
+  region?: string;
+  drain?: boolean;
+  rate?: number;
+  redrive?: boolean;
+  fun?: string;
+  queue?: string;
+  space?: string;
+  time?: string;
+  log?: string;
+  fromFile?: string;
+  invertedMatch?: string;
 };
 
 async function redriveMessageToLambda(
-  // $FlowFixMe
-  message: any,
+  message: SQS.Message,
   lambda: AWS.Lambda,
-  sqs: AWS.SQS,
   FunctionName: string,
-  QueueUrl: string,
-  log: string,
-  retireMessage: ({ ReceiptHandle: string }) => Promise<void>
+  log: string | null,
+  retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
 ) {
   const InvocationType = log == null ? "Event" : "RequestResponse";
   const LogType = log == null ? "None" : "Tail";
@@ -114,33 +118,31 @@ async function redriveMessageToLambda(
       `${log}${message.MessageId}.log`,
       Buffer.concat([
         Buffer.from(`${message.MessageId}\n${result.FunctionError ?? "Success"}\n${result.Payload ?? ""}\n`, "utf-8"),
-        Buffer.from(result.LogResult, "base64")
-      ])
+        Buffer.from(result.LogResult ?? "", "base64"),
+      ]),
     );
-    if (result.FunctionError == null) {
-      await retireMessage(message);
+    if (result.FunctionError == null && message.ReceiptHandle) {
+      await retireMessage(message as { ReceiptHandle: string });
     }
-  } else if (result.StatusCode === 202) {
-    await retireMessage(message);
+  } else if (result.StatusCode === 202 && message.ReceiptHandle) {
+    await retireMessage(message as { ReceiptHandle: string });
   } else {
     console.error(result);
   }
 }
 
 async function redriveMessageToSqs(
-  // $FlowFixMe[unclear-type]
-  message: { MessageId: string, ReceiptHandle: string, MessageAttributes: Object, Body: string },
+  message: SQS.Message & { ReceiptHandle: string },
   sqs: AWS.SQS,
-  QueueUrl: string,
-  primaryQueue: ?string,
-  log: ?string,
-  retireMessage: ({ ReceiptHandle: string }) => Promise<void>
+  primaryQueue: string,
+  log: string | null | undefined,
+  retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
 ) {
   const result = await sqs
     .sendMessage({
-      MessageBody: message.Body,
+      MessageBody: message.Body ?? "",
       QueueUrl: primaryQueue,
-      MessageAttributes: message.MessageAttributes
+      MessageAttributes: message.MessageAttributes,
     })
     .promise();
   if (log != null) {
@@ -150,24 +152,22 @@ async function redriveMessageToSqs(
 }
 
 async function redriveMessage(
-  // $FlowFixMe
-  message: any,
+  message: SQS.Message & { ReceiptHandle: string },
   lambda: AWS.Lambda,
   sqs: AWS.SQS,
-  queueUrl: string,
-  functionName: ?string,
-  log: string,
-  primaryQueue: ?string,
-  retireMessage: ({ ReceiptHandle: string }) => Promise<void>
+  functionName: string | null | undefined,
+  log: string | null,
+  primaryQueue: string | null,
+  retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
 ) {
   if (functionName != null) {
-    await redriveMessageToLambda(message, lambda, sqs, functionName, queueUrl, log, retireMessage);
+    await redriveMessageToLambda(message, lambda, functionName, log, retireMessage);
   } else {
-    await redriveMessageToSqs(message, sqs, queueUrl, primaryQueue, log, retireMessage);
+    await redriveMessageToSqs(message, sqs, primaryQueue as string, log, retireMessage);
   }
 }
 
-function parallelGenerateSqsMessage(sqs: AWS.SQS, params: AWS.SQS.Types.ReceiveMessageRequest, n: number) {
+function parallelGenerateSqsMessage(sqs: AWS.SQS, params: Params, n: number) {
   const generators = [];
   for (let i = 0; i < n; i += 1) {
     generators.push(generateSqsMessages(sqs, params));
@@ -175,24 +175,23 @@ function parallelGenerateSqsMessage(sqs: AWS.SQS, params: AWS.SQS.Types.ReceiveM
   return mergeRace(...generators);
 }
 
-export default async function(options: Options) {
+// eslint-disable-next-line func-names
+export default async function (options: Options): Promise<void> {
   function handleMessage(
-    space,
-    redrive,
-    lambda,
-    sqs,
-    QueueUrl,
-    FunctionName,
-    log,
-    primaryQueue,
-    drain,
-    retireMessage: ({ ReceiptHandle: string }) => Promise<void>
+    space: string,
+    redrive: boolean,
+    lambda: Lambda,
+    sqs: SQS,
+    FunctionName: string | null,
+    log: string | null,
+    primaryQueue: string | null,
+    drain: boolean,
+    retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
   ) {
-    // flowlint-next-line unclear-type:off
-    return async (message: Object) => {
+    return async (message: SQS.Message & { ReceiptHandle: string }) => {
       console.log(JSON.stringify({ ...message, skipped: false }, null, parseInt(space, 10)));
       if (redrive) {
-        await redriveMessage(message, lambda, sqs, QueueUrl, FunctionName, log, primaryQueue, retireMessage);
+        await redriveMessage(message, lambda, sqs, FunctionName, log, primaryQueue, retireMessage);
       } else if (drain) {
         await retireMessage(message);
       }
@@ -213,22 +212,22 @@ export default async function(options: Options) {
         log: ["l"],
         fromFile: ["i", "from-file"],
         invertedMatch: ["v", "inverted-match"],
-        help: ["h"]
+        help: ["h"],
       },
-      boolean: ["drain", "redrive"]
+      boolean: ["drain", "redrive"],
     });
 
     const rate = Number(args.rate ?? options.rate ?? 10) / 1000;
-    const region = args.region ?? options.region;
-    const drain = args.drain ?? options.drain ?? false;
-    const redrive = args.redrive ?? options.redrive ?? false;
-    const FunctionName = args.fun ?? options.fun;
-    const space = args.space ?? options.space ?? "0";
+    const region: string | null = args.region ?? options.region ?? null;
+    const drain: boolean = args.drain ?? Boolean(options.drain) ?? false;
+    const redrive: boolean = args.redrive ?? Boolean(options.redrive) ?? false;
+    const FunctionName: boolean | string | null = args.fun ?? options.fun ?? null;
+    const space: string = args.space ?? options.space ?? "0";
     const time = Number(args.time ?? options.time ?? "1000");
-    const log = args.log ?? options.log;
-    const primaryQueue = args.queue ?? options.queue;
-    const fromFile = args.fromFile ?? options.fromFile;
-    const invertedMatch = args.invertedMatch ?? options.invertedMatch;
+    const log: boolean | string | null = args.log ?? options.log ?? null;
+    const primaryQueue: boolean | string | null = args.queue ?? options.queue ?? null;
+    const fromFile: boolean | string | null = args.fromFile ?? options.fromFile ?? null;
+    const invertedMatch: boolean | string | null = args.invertedMatch ?? options.invertedMatch ?? null;
     if (
       args.help ||
       typeof region !== "string" ||
@@ -248,10 +247,16 @@ export default async function(options: Options) {
     const MaxNumberOfMessages = 10;
     const sqs = new AWS.SQS({ region });
     const now = new Date();
-    const { Timeout, QueueUrl } =
+    const { Timeout: TimeoutRaw, QueueUrl } =
       FunctionName != null
         ? await getLambdaConfiguration(new AWS.Lambda({ region }), sqs, FunctionName)
-        : await getSqsConfiguration(sqs, primaryQueue);
+        : await getSqsConfiguration(sqs, primaryQueue as string);
+    if (!QueueUrl) {
+      // noinspection ExceptionCaughtLocallyJS
+      throw new Error("No queue url");
+    }
+
+    const Timeout = TimeoutRaw ?? 10;
     const lambda = new AWS.Lambda({ region, httpOptions: { timeout: Timeout * 1000 + 1000 } });
 
     // Deadline for starting invocation
@@ -268,41 +273,32 @@ export default async function(options: Options) {
               QueueUrl,
               MaxNumberOfMessages,
               Deadline,
-              VisibilityTimeout
+              VisibilityTimeout,
             },
-            32
+            32,
           )
-        : await generateFileMessages(fromFile);
+        : generateFileMessages(fromFile);
 
-    const noop = () => Promise.resolve(undefined);
-    const retireSqsMessage = message => sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+    const noop = () => Promise.resolve();
+    const retireSqsMessage = async (message: SQS.Message & { ReceiptHandle: string }): Promise<void> => {
+      await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+    };
 
-    const retireMessage: ({ ReceiptHandle: string }) => Promise<void> = fromFile == null ? retireSqsMessage : noop;
+    const retireMessage: (arg1: SQS.Message & { ReceiptHandle: string }) => Promise<void> =
+      fromFile == null ? retireSqsMessage : noop;
 
     if (log) {
-      // $FlowFixMe
       await fsp.mkdir(path.dirname(`${log}`), { recursive: true });
     }
     const progress = new cliProgress.SingleBar({
       format: "Progress | {bar} | {value}/{total} |  actual {actualRate}/s | target {rate}/s",
       barCompleteChar: "\u2588",
       barIncompleteChar: "\u2591",
-      hideCursor: true
+      hideCursor: true,
     });
     let total = 0;
     const control = aimd({ a: rate / 20, b: 0.5, w: rate, deadline: Deadline });
-    const handler = handleMessage(
-      space,
-      redrive,
-      lambda,
-      sqs,
-      QueueUrl,
-      FunctionName,
-      log,
-      primaryQueue,
-      drain,
-      retireMessage
-    );
+    const handler = handleMessage(space, redrive, lambda, sqs, FunctionName, log, primaryQueue, drain, retireMessage);
     progress.start(1, 0, { rate: rate * 1000, actualRate: 0 });
     const start = Date.now();
     for await (const message of messages) {
@@ -314,7 +310,7 @@ export default async function(options: Options) {
             .then(() => {
               const elapsed = (Date.now() - start) / 1000;
               progress.increment({ actualRate: (total / elapsed).toFixed(1) });
-            })
+            }),
         );
       } else {
         promises.push(
@@ -323,7 +319,7 @@ export default async function(options: Options) {
             await handler(message);
             const elapsed = (Date.now() - start) / 1000;
             progress.increment({ rate: (w * 1000).toFixed(1), actualRate: (total / elapsed).toFixed(1) });
-          })
+          }),
         );
       }
       total += 1;
@@ -332,8 +328,8 @@ export default async function(options: Options) {
     await Promise.all(promises);
     progress.stop();
     process.exit(0);
-  } catch (e) {
-    console.error(e.message);
+  } catch (e: unknown) {
+    console.error((e as Error).message);
     process.exit(2);
   }
 }
