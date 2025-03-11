@@ -7,55 +7,5 @@ on:
 jobs:
   release:
     name: Create Release
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Fetch all tags
-        run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-      - name: get current version and prior versions
-        id: versions
-        run: |
-          echo "mostRecentTag=$(git tag --sort=-taggerdate | head -n1)" >> $GITHUB_ENV
-          echo "priorRelease=$(curl -s -H 'Authorization: token ${{ secrets.PRIOR_VERSION_TOKEN }}' -L https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)" >> $GITHUB_ENV
-      - name: generate changelog
-        id: changelog
-        uses: heinrichreimer/auto-changelog-action@master
-        with:
-          token: ${{ secrets.RELEASE_TOKEN }}
-          sinceTag: ${{ env.priorRelease }}
-          headerLabel: "# 📑 Changelog"
-          breakingLabel: "### 💥 Breaking"
-          enhancementLabel: "### 🚀 Enhancements"
-          bugsLabel: "### 🐛 Bug fixes"
-          deprecatedLabel: "### ⚠️ Deprecations"
-          removedLabel: "### 🔥 Removals"
-          securityLabel: "### 🛡️ Security"
-          issuesLabel: "### 📁 Other issues"
-          prLabel: "### 📁 Other pull requests"
-          addSections: '{"documentation":{"prefix":"### 📖 Documentation","labels":["documentation"]},"prod":{"prefix":"### Production site updates","labels":["prod"]},"dev":{"prefix":"### Development site updates","labels":["dev"]},"dependabot":{"prefix":"### Dependabot updates","labels":["dependabot"]},"actions":{"prefix":"### Actions","labels":["actions"]},"dependencies":{"prefix":"### Dependency updates","labels":["dependencies"]}}'
-          issues: true
-          issuesWoLabels: true
-          pullRequests: true
-          prWoLabels: true
-          author: true
-          unreleased: true
-          compareLink: true
-          stripGeneratorNotice: true
-          verbose: true
-      - name: add "changes since" link
-        id: changesSince
-        run: sed -i '/\# 📑 Changelog/a [Changes Since Release](https://github.com/${{ github.repository }}/compare/${{ env.mostRecentTag }}...master)' CHANGELOG.md
-      - name: echo changelog
-        id: echo
-        run: cat CHANGELOG.md
-      - name: Create Release
-        if: success()
-        uses: ncipollo/release-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: true
-          allowUpdates: true
-          draft: false
-          commit: ${{ github.sha }}
-          bodyFile: CHANGELOG.md
+    uses: CumulusDS/workflows/.github/workflows/create-release.yml@master
+    secrets: inherit
