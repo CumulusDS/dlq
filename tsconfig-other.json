@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  // Extend the base configuration
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "test"
+  ]
+}
