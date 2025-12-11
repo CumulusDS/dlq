@@ -9,8 +9,8 @@ import AWS, { Lambda, SQS } from "aws-sdk";
 import { promises as fsp } from "fs";
 import cliProgress from "cli-progress";
 import { GetFunctionResponse } from "aws-sdk/clients/lambda";
+import pLimit from "p-limit";
 import generateSqsMessages from "./generate-sqs-messages";
-import aimd from "./aimd";
 import generateFileMessages from "./generate-file-messages";
 import { Params } from "./types";
 
@@ -175,6 +175,7 @@ function parallelGenerateSqsMessage(sqs: AWS.SQS, params: Params, n: number) {
   return mergeRace(...generators);
 }
 
+// todo - nobody is passing anything for the options except maybe a unit test
 // eslint-disable-next-line func-names
 export default async function (options: Options): Promise<void> {
   function handleMessage(
@@ -297,7 +298,8 @@ export default async function (options: Options): Promise<void> {
       hideCursor: true,
     });
     let total = 0;
-    const control = aimd({ a: rate / 20, b: 0.5, w: rate, deadline: Deadline });
+    // todo - can get the limit from the lambda's reserved concurrency, but 10 is a reasonable default
+    const limit = pLimit(10);
     const handler = handleMessage(space, redrive, lambda, sqs, FunctionName, log, primaryQueue, drain, retireMessage);
     progress.start(1, 0, { rate: rate * 1000, actualRate: 0 });
     const start = Date.now();
@@ -315,10 +317,10 @@ export default async function (options: Options): Promise<void> {
       } else {
         promises.push(
           // eslint-disable-next-line no-loop-func
-          control(async (w: number) => {
+          limit(async () => {
             await handler(message);
             const elapsed = (Date.now() - start) / 1000;
-            progress.increment({ rate: (w * 1000).toFixed(1), actualRate: (total / elapsed).toFixed(1) });
+            progress.increment({ rate: (0.01 * 1000).toFixed(1), actualRate: (total / elapsed).toFixed(1) });
           }),
         );
       }
