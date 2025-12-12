@@ -71,6 +71,7 @@
   "bin": "bin/dlq.js",
   "dependencies": {
     "@async-generator/merge-race": "^1.0.3",
+    "@cumulusds/lego": "^5.2.0",
     "aws-sdk": "^2.706.0",
     "cli-progress": "^3.9.0",
     "minimist": "^1.2.5",

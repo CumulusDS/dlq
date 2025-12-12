@@ -3,6 +3,9 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error
 import mergeRace from "@async-generator/merge-race";
+import type { AwsCredentialIdentity } from "@aws-sdk/types";
+// eslint-disable-next-line import/no-unresolved
+import assumeScriptRole from "@cumulusds/lego/assume";
 import path from "path";
 import parseArgs from "minimist";
 import AWS, { Lambda, SQS } from "aws-sdk";
@@ -89,7 +92,10 @@ async function getSqsConfiguration(sqs: SQS, QueueUrl: string) {
   return { Timeout: 0, QueueUrl: await getQueueUrl(sqs, deadLetterTargetArn) };
 }
 
+type Environment = "dev" | "prod";
+
 export type Options = {
+  env?: Environment;
   region?: string;
   drain?: boolean;
   rate?: number;
@@ -199,9 +205,12 @@ export default async function (options: Options): Promise<void> {
     };
   }
 
+  const sixHours = 6 * 60 * 60;
+
   try {
     const args = parseArgs(process.argv.slice(2), {
       alias: {
+        env: ["e"],
         drain: ["d"],
         rate: ["w"],
         region: ["r"],
@@ -221,6 +230,7 @@ export default async function (options: Options): Promise<void> {
     const rate = Number(args.rate ?? options.rate ?? 10) / 1000;
     const region: string | null = args.region ?? options.region ?? null;
     const drain: boolean = args.drain ?? Boolean(options.drain) ?? false;
+    const { env } = args;
     const redrive: boolean = args.redrive ?? Boolean(options.redrive) ?? false;
     const FunctionName: boolean | string | null = args.fun ?? options.fun ?? null;
     const space: string = args.space ?? options.space ?? "0";
@@ -245,12 +255,22 @@ export default async function (options: Options): Promise<void> {
       return;
     }
 
+    const { accessKeyId, secretAccessKey, sessionToken } = (await assumeScriptRole({
+      region,
+      stage: env,
+      script: "FHJR",
+      durationSeconds: sixHours,
+      roleName: "AdministratorRole",
+      service: FunctionName!.split("-")[0],
+    })) as AwsCredentialIdentity;
+    const credentials = { accessKeyId, secretAccessKey, sessionToken };
+
     const MaxNumberOfMessages = 10;
-    const sqs = new AWS.SQS({ region });
+    const sqs = new AWS.SQS({ credentials, region });
     const now = new Date();
     const { Timeout: TimeoutRaw, QueueUrl } =
       FunctionName != null
-        ? await getLambdaConfiguration(new AWS.Lambda({ region }), sqs, FunctionName)
+        ? await getLambdaConfiguration(new AWS.Lambda({ credentials, region }), sqs, FunctionName)
         : await getSqsConfiguration(sqs, primaryQueue as string);
     if (!QueueUrl) {
       // noinspection ExceptionCaughtLocallyJS
@@ -258,13 +278,13 @@ export default async function (options: Options): Promise<void> {
     }
 
     const Timeout = TimeoutRaw ?? 10;
-    const lambda = new AWS.Lambda({ region, httpOptions: { timeout: Timeout * 1000 + 1000 } });
+    const lambda = new AWS.Lambda({ credentials, region, httpOptions: { timeout: Timeout * 1000 + 1000 } });
 
     // Deadline for starting invocation
     const VisibilityTimeout = time + Timeout;
     const Deadline = now.getTime() + time * 1000;
 
-    const promises = [];
+    let promises = [];
 
     const messages =
       fromFile == null
@@ -295,7 +315,7 @@ export default async function (options: Options): Promise<void> {
       format: "Progress | {bar} | {value}/{total} |  actual {actualRate}/s | target {rate}/s",
       barCompleteChar: "\u2588",
       barIncompleteChar: "\u2591",
-      hideCursor: true,
+      hideCursor: false,
     });
     let total = 0;
     // todo - can get the limit from the lambda's reserved concurrency, but 10 is a reasonable default
@@ -304,6 +324,11 @@ export default async function (options: Options): Promise<void> {
     progress.start(1, 0, { rate: rate * 1000, actualRate: 0 });
     const start = Date.now();
     for await (const message of messages) {
+      if (promises.length > 25000) {
+        await Promise.all(promises);
+        promises = [];
+      }
+
       if (invertedMatch && JSON.stringify(message).includes(invertedMatch)) {
         console.log(JSON.stringify({ ...message, skipped: true }, null, parseInt(space, 10)));
         promises.push(
