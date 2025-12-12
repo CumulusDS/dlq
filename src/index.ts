@@ -3,15 +3,38 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error
 import mergeRace from "@async-generator/merge-race";
+import { GetFunctionCommand, LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import type {
+  GetFunctionCommandInput,
+  GetFunctionResponse,
+  InvokeCommandInput,
+  InvokeCommandOutput,
+  LambdaClientConfig,
+} from "@aws-sdk/client-lambda";
+import {
+  DeleteMessageCommand,
+  SQSClient,
+  GetQueueUrlCommand,
+  GetQueueAttributesCommand,
+  Message,
+  SendMessageCommand,
+} from "@aws-sdk/client-sqs";
+import type {
+  DeleteMessageCommandInput,
+  GetQueueAttributesCommandInput,
+  GetQueueUrlCommandInput,
+  SendMessageCommandInput,
+} from "@aws-sdk/client-sqs";
+import { NodeHttpHandler } from "@aws-sdk/node-http-handler";
 import type { AwsCredentialIdentity } from "@aws-sdk/types";
 // eslint-disable-next-line import/no-unresolved
 import assumeScriptRole from "@cumulusds/lego/assume";
 import path from "path";
 import parseArgs from "minimist";
-import AWS, { Lambda, SQS } from "aws-sdk";
+// import AWS, { Lambda } from "aws-sdk";
 import { promises as fsp } from "fs";
 import cliProgress from "cli-progress";
-import { GetFunctionResponse } from "aws-sdk/clients/lambda";
+// import { GetFunctionResponse } from "aws-sdk/clients/lambda";
 import pLimit from "p-limit";
 import generateSqsMessages from "./generate-sqs-messages";
 import generateFileMessages from "./generate-file-messages";
@@ -53,14 +76,20 @@ function decodeSqsArn(arn: string) {
   return { QueueOwnerAWSAccountId, QueueName };
 }
 
-async function getQueueUrl(sqs: SQS, arn: string) {
+async function getQueueUrl(sqs: SQSClient, arn: string) {
   const { QueueOwnerAWSAccountId, QueueName } = decodeSqsArn(arn);
-  const { QueueUrl } = await sqs.getQueueUrl({ QueueName, QueueOwnerAWSAccountId }).promise();
+  const GetUrlCmdInput: GetQueueUrlCommandInput = { QueueName, QueueOwnerAWSAccountId };
+  const GetUrlCommand = new GetQueueUrlCommand(GetUrlCmdInput);
+  const { QueueUrl } = await sqs.send(GetUrlCommand);
+  // const { QueueUrl } = await GetQueueUrlCommand({ QueueName, QueueOwnerAWSAccountId }).promise();
   return QueueUrl;
 }
 
-async function getLambdaConfiguration(lambda: Lambda, sqs: SQS, FunctionName: string) {
-  const funcResponse: GetFunctionResponse = await lambda.getFunction({ FunctionName }).promise();
+async function getLambdaConfiguration(lambda: LambdaClient, sqs: SQSClient, FunctionName: string) {
+  const GetFunctionCmdInput: GetFunctionCommandInput = { FunctionName };
+  const GetFunctionCmd: GetFunctionCommand = new GetFunctionCommand(GetFunctionCmdInput);
+  const funcResponse: GetFunctionResponse = await lambda.send(GetFunctionCmd);
+  // const funcResponse: GetFunctionResponse = await lambda.getFunction({ FunctionName }).promise();
   if (!funcResponse || !funcResponse.Configuration || !funcResponse.Configuration.DeadLetterConfig?.TargetArn) {
     throw new Error(`No function or DLQ '${FunctionName}'`);
   }
@@ -74,13 +103,16 @@ async function getLambdaConfiguration(lambda: Lambda, sqs: SQS, FunctionName: st
   return { Timeout, QueueUrl };
 }
 
-async function getSqsConfiguration(sqs: SQS, QueueUrl: string) {
-  const { Attributes } = await sqs
-    .getQueueAttributes({
-      QueueUrl,
-      AttributeNames: ["RedrivePolicy"],
-    })
-    .promise();
+async function getSqsConfiguration(sqs: SQSClient, QueueUrl: string) {
+  const GetQueueAttributesCmdInput: GetQueueAttributesCommandInput = { QueueUrl, AttributeNames: ["RedrivePolicy"] };
+  const GetQueueAttributesCmd = new GetQueueAttributesCommand(GetQueueAttributesCmdInput);
+  const { Attributes } = await sqs.send(GetQueueAttributesCmd);
+  // const { Attributes } = await sqs
+  //   .getQueueAttributes({
+  //     QueueUrl,
+  //     AttributeNames: ["RedrivePolicy"],
+  //   })
+  //   .promise();
   const RedrivePolicy = Attributes?.RedrivePolicy;
   if (RedrivePolicy == null) {
     throw new Error(`No redrive policy on queue '${QueueUrl}'`);
@@ -110,15 +142,18 @@ export type Options = {
 };
 
 async function redriveMessageToLambda(
-  message: SQS.Message,
-  lambda: AWS.Lambda,
+  message: Message,
+  lambda: LambdaClient,
   FunctionName: string,
   log: string | null,
   retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
 ) {
   const InvocationType = log == null ? "Event" : "RequestResponse";
   const LogType = log == null ? "None" : "Tail";
-  const result = await lambda.invoke({ FunctionName, InvocationType, LogType, Payload: message.Body }).promise();
+  const LambdaInvokeCommandInput: InvokeCommandInput = { FunctionName, InvocationType, LogType, Payload: message.Body };
+  const LambdaInvokeCommand: InvokeCommand = new InvokeCommand(LambdaInvokeCommandInput);
+  const result: InvokeCommandOutput = await lambda.send(LambdaInvokeCommand);
+  // const result = await lambda.invoke({ FunctionName, InvocationType, LogType, Payload: message.Body }).promise();
   if (result.StatusCode === 200) {
     await fsp.writeFile(
       `${log}${message.MessageId}.log`,
@@ -138,19 +173,27 @@ async function redriveMessageToLambda(
 }
 
 async function redriveMessageToSqs(
-  message: SQS.Message & { ReceiptHandle: string },
-  sqs: AWS.SQS,
+  message: Message & { ReceiptHandle: string },
+  sqs: SQSClient,
   primaryQueue: string,
   log: string | null | undefined,
   retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
 ) {
-  const result = await sqs
-    .sendMessage({
-      MessageBody: message.Body ?? "",
-      QueueUrl: primaryQueue,
-      MessageAttributes: message.MessageAttributes,
-    })
-    .promise();
+  const SendMessageCmdInput: SendMessageCommandInput = {
+    MessageBody: message.Body ?? "",
+    QueueUrl: primaryQueue,
+    MessageAttributes: message.MessageAttributes,
+  };
+  const SendMessageCmd = new SendMessageCommand(SendMessageCmdInput);
+
+  const result = await sqs.send(SendMessageCmd);
+  // const result = await sqs
+  //   .sendMessage({
+  //     MessageBody: message.Body ?? "",
+  //     QueueUrl: primaryQueue,
+  //     MessageAttributes: message.MessageAttributes,
+  //   })
+  //   .promise();
   if (log != null) {
     await fsp.writeFile(`${log}${message.MessageId}.log`, `Redrive\n${result.MessageId}`);
   }
@@ -158,9 +201,9 @@ async function redriveMessageToSqs(
 }
 
 async function redriveMessage(
-  message: SQS.Message & { ReceiptHandle: string },
-  lambda: AWS.Lambda,
-  sqs: AWS.SQS,
+  message: Message & { ReceiptHandle: string },
+  lambda: LambdaClient,
+  sqs: SQSClient,
   functionName: string | null | undefined,
   log: string | null,
   primaryQueue: string | null,
@@ -173,7 +216,7 @@ async function redriveMessage(
   }
 }
 
-function parallelGenerateSqsMessage(sqs: AWS.SQS, params: Params, n: number) {
+function parallelGenerateSqsMessage(sqs: SQSClient, params: Params, n: number) {
   const generators = [];
   for (let i = 0; i < n; i += 1) {
     generators.push(generateSqsMessages(sqs, params));
@@ -187,15 +230,15 @@ export default async function (options: Options): Promise<void> {
   function handleMessage(
     space: string,
     redrive: boolean,
-    lambda: Lambda,
-    sqs: SQS,
+    lambda: LambdaClient,
+    sqs: SQSClient,
     FunctionName: string | null,
     log: string | null,
     primaryQueue: string | null,
     drain: boolean,
     retireMessage: (arg1: { ReceiptHandle: string }) => Promise<void>,
   ) {
-    return async (message: SQS.Message & { ReceiptHandle: string }) => {
+    return async (message: Message & { ReceiptHandle: string }) => {
       console.log(JSON.stringify({ ...message, skipped: false }, null, parseInt(space, 10)));
       if (redrive) {
         await redriveMessage(message, lambda, sqs, FunctionName, log, primaryQueue, retireMessage);
@@ -266,11 +309,11 @@ export default async function (options: Options): Promise<void> {
     const credentials = { accessKeyId, secretAccessKey, sessionToken };
 
     const MaxNumberOfMessages = 10;
-    const sqs = new AWS.SQS({ credentials, region });
+    const sqs = new SQSClient({ credentials, region });
     const now = new Date();
     const { Timeout: TimeoutRaw, QueueUrl } =
       FunctionName != null
-        ? await getLambdaConfiguration(new AWS.Lambda({ credentials, region }), sqs, FunctionName)
+        ? await getLambdaConfiguration(new LambdaClient({ credentials, region }), sqs, FunctionName)
         : await getSqsConfiguration(sqs, primaryQueue as string);
     if (!QueueUrl) {
       // noinspection ExceptionCaughtLocallyJS
@@ -278,7 +321,12 @@ export default async function (options: Options): Promise<void> {
     }
 
     const Timeout = TimeoutRaw ?? 10;
-    const lambda = new AWS.Lambda({ credentials, region, httpOptions: { timeout: Timeout * 1000 + 1000 } });
+    const requestHandler = new NodeHttpHandler({
+      requestTimeout: Timeout * 1000 + 1000, // v2's 'timeout' equivalent
+    });
+    const LambdaConfig: LambdaClientConfig = { credentials, region, requestHandler };
+    // const lambda = new AWS.Lambda({ credentials, region, httpOptions: { timeout: Timeout * 1000 + 1000 } });
+    const lambda = new LambdaClient(LambdaConfig);
 
     // Deadline for starting invocation
     const VisibilityTimeout = time + Timeout;
@@ -301,11 +349,14 @@ export default async function (options: Options): Promise<void> {
         : generateFileMessages(fromFile);
 
     const noop = () => Promise.resolve();
-    const retireSqsMessage = async (message: SQS.Message & { ReceiptHandle: string }): Promise<void> => {
-      await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
+    const retireSqsMessage = async (message: Message & { ReceiptHandle: string }): Promise<void> => {
+      const DeleteMessageCmdInput: DeleteMessageCommandInput = { QueueUrl, ReceiptHandle: message.ReceiptHandle };
+      const DeleteMessageCmd = new DeleteMessageCommand(DeleteMessageCmdInput);
+      await sqs.send(DeleteMessageCmd);
+      // await sqs.deleteMessage({ QueueUrl, ReceiptHandle: message.ReceiptHandle }).promise();
     };
 
-    const retireMessage: (arg1: SQS.Message & { ReceiptHandle: string }) => Promise<void> =
+    const retireMessage: (arg1: Message & { ReceiptHandle: string }) => Promise<void> =
       fromFile == null ? retireSqsMessage : noop;
 
     if (log) {

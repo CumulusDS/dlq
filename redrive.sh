@@ -54,7 +54,7 @@ redriveFromQueue() {
   sleep 1
   # NODE_OPTIONS="--max-old-space-size=4096" bin/dlq.js --rate ${rate} \
   NODE_OPTIONS="--max-old-space-size=12288" bin/dlq.js --rate ${rate} \
-    --time 60 \
+    --time 300 \
     --region ${region} \
     --env ${stage} \
     --function-name ${service}-${stage}-${function} \
@@ -63,7 +63,7 @@ redriveFromQueue() {
 }
 
 main() {
-  yarn build
+  # yarn && yarn build
 
   echo "service: ${service}"
   echo "stage: ${stage}"

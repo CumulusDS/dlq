@@ -1,6 +1,9 @@
-import { SQS } from "aws-sdk";
+// import { SQS } from "aws-sdk";
+import { SQSClient } from "@aws-sdk/client-sqs";
 import generateSqsMessages from "../../src/generate-sqs-messages";
 import { Params } from "../../src/types";
+
+jest.mock("@aws-sdk/client-sqs", () => {});
 
 describe("generateSqsMessages", () => {
   let dateNowSpy: jest.SpyInstance;
@@ -10,9 +13,10 @@ describe("generateSqsMessages", () => {
     dateNowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
   });
 
-  const sqs = {
-    receiveMessage: jest.fn().mockReturnValue({ promise: jest.fn().mockResolvedValue({ Messages: [{}] }) }),
-  } as unknown as SQS;
+  // const sqs = {
+  //   receiveMessage: jest.fn().mockReturnValue({ promise: jest.fn().mockResolvedValue({ Messages: [{}] }) }),
+  // } as unknown as SQSClient;
+  const sqs: SQSClient = new SQSClient({});
 
   it("continues when deadline has not passed", () => {
     const Deadline = Date.now() + 1000;

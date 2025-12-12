@@ -1,5 +1,5 @@
-import AWS from "aws-sdk";
+import type { ReceiveMessageRequest } from "@aws-sdk/client-sqs";
 
-export type Params = AWS.SQS.Types.ReceiveMessageRequest & {
+export type Params = ReceiveMessageRequest & {
   Deadline: number;
 };
