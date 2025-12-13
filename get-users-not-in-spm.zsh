@@ -97,6 +97,40 @@ main() {
     echo;
   done < "${user_names_dedpuplicated}"
 
+  # handle spm-train separately
+  while IFS= read -r line; do
+    echo "${line//[^[:alnum:]-]/}"
+    # get a list of all groups for the user
+    groups="$(awsudo -u sts-prod aws cognito-idp admin-list-groups-for-user \
+      --user-pool-id "${USER_POOL_ID}" \
+      --username "${line//[^[:alnum:]-]/}")"
+
+    # filter and create an array of only the pennchem groups
+    declare -a pennchem_groups=($(echo "${groups}" | jq -r ".Groups[] | .GroupName" | grep "pennchem"))
+
+    # add user to spm version of any pennchem group that they exist in
+    for g in "${pennchem_groups[@]}"; do
+      # create a string var that substitutes "pennchem" => "spm"
+      spm_equivalent="$(echo "${g}" | sed "s/pennchem-training/spm-strain/")"
+      echo "${g} => ${spm_equivalent}"
+
+      # add the user to the spm group
+      awsudo -u sts-prod aws cognito-idp admin-add-user-to-group \
+        --user-pool-id "${USER_POOL_ID}" \
+        --username "${line//[^[:alnum:]-]/}" \
+        --group-name "${spm_equivalent}"
+
+      # take a nap
+      sleep 0.1
+      unset spm_equivalent
+    done
+
+    # take another nap
+    sleep 0.1
+    unset groups pennchem_groups
+    echo;
+  done < "${user_names_not_in_spm_train}"
+
   echo "Started adding to groups at ${start_date}"
   echo "Completed at $(date)"
 }
