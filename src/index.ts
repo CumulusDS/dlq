@@ -252,7 +252,6 @@ export default async function (options: Options): Promise<void> {
     ) {
       printHelp();
       process.exit(1);
-      return;
     }
 
     const { accessKeyId, secretAccessKey, sessionToken } = (await assumeScriptRole({
@@ -324,7 +323,10 @@ export default async function (options: Options): Promise<void> {
     progress.start(1, 0, { rate: rate * 1000, actualRate: 0 });
     const start = Date.now();
     for await (const message of messages) {
-      if (promises.length > 25000) {
+      /**
+       * limit the number of promises in memory to avoid crashing
+       */
+      if (promises.length > 30000) {
         await Promise.all(promises);
         promises = [];
       }

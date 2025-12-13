@@ -63,7 +63,12 @@ redriveFromQueue() {
 }
 
 main() {
+  yarn
+  echo;
   yarn build
+  echo;
+  echo "**************************************************************************"
+  echo;
 
   echo "service: ${service}"
   echo "stage: ${stage}"
@@ -75,9 +80,11 @@ main() {
   redrivePath="var/${service}/${stage}/${function}/redrive/${region}/${function}_${region}_${filedate}"
   mkdir -p "${redrivePath}"
 
-  echo "$(date)"
+  echo "Start:  $(date)"
   echo;
   redriveFromQueue
+  echo;
+  echo "Finish: $(date)"
 }
 
 if [[ -z "${service}" ]] || [[ -z "${stage}" ]] || [[ -z "${region}" ]] || [[ -z "${function}" ]]; then
