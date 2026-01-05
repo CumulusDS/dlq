@@ -49,3 +49,11 @@ var/
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+*.txt
+
+*.sh
+*.zsh
+!drain.sh
+!redrive.sh
+!redriveFromFile.sh
