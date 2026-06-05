@@ -87,7 +87,7 @@ describe("main", () => {
 
     it("prints help message when no arguments are given", async () => {
       await main({});
-      expect(exit).toBeCalledWith(1);
+      expect(exit).toHaveBeenCalledWith(1);
     });
   });
 
@@ -102,7 +102,7 @@ describe("main", () => {
 
     it("completes normally", async () => {
       await main({});
-      expect(exit).toBeCalledWith(0);
+      expect(exit).toHaveBeenCalledWith(0);
     });
 
     describe("redrive", () => {
@@ -115,7 +115,7 @@ describe("main", () => {
       it("invokes asynchronously", async () => {
         await main({});
         const lambda = new AWS.Lambda();
-        expect(lambda.invoke).toBeCalledWith({
+        expect(lambda.invoke).toHaveBeenCalledWith({
           FunctionName: "service-stage-function",
           InvocationType: "Event",
           LogType: "None",
@@ -126,7 +126,7 @@ describe("main", () => {
       it("deletes message", async () => {
         await main({});
         const sqs = new AWS.SQS();
-        expect(sqs.deleteMessage).toBeCalledWith({ QueueUrl: "queue", ReceiptHandle: "receipt-handle" });
+        expect(sqs.deleteMessage).toHaveBeenCalledWith({ QueueUrl: "queue", ReceiptHandle: "receipt-handle" });
       });
 
       describe("with AWS invocation status code 400", () => {
@@ -137,7 +137,7 @@ describe("main", () => {
         it("does not delete message", async () => {
           await main({});
           const sqs = new AWS.SQS();
-          expect(sqs.deleteMessage).not.toBeCalled();
+          expect(sqs.deleteMessage).not.toHaveBeenCalled();
         });
       });
 
@@ -169,13 +169,13 @@ describe("main", () => {
 
         it("writes a log file", async () => {
           await main({});
-          expect(fs.writeFile).toBeCalledWith("prefix-123.log", expect.any(Object));
+          expect(fs.writeFile).toHaveBeenCalledWith("prefix-123.log", expect.any(Object));
         });
 
         it("deletes message", async () => {
           await main({});
           const sqs = new AWS.SQS();
-          expect(sqs.deleteMessage).toBeCalledWith({ QueueUrl: "queue", ReceiptHandle: "receipt-handle" });
+          expect(sqs.deleteMessage).toHaveBeenCalledWith({ QueueUrl: "queue", ReceiptHandle: "receipt-handle" });
         });
 
         describe("with Function Error", () => {
@@ -202,7 +202,7 @@ describe("main", () => {
           it("does not delete message", async () => {
             await main({});
             const sqs = new AWS.SQS();
-            expect(sqs.deleteMessage).not.toBeCalled();
+            expect(sqs.deleteMessage).not.toHaveBeenCalled();
           });
         });
       });
@@ -218,7 +218,7 @@ describe("main", () => {
       it("deletes message", async () => {
         const sqs = new AWS.SQS();
         await main({});
-        expect(sqs.deleteMessage).toBeCalledWith({ QueueUrl: "queue", ReceiptHandle: "receipt-handle" });
+        expect(sqs.deleteMessage).toHaveBeenCalledWith({ QueueUrl: "queue", ReceiptHandle: "receipt-handle" });
       });
     });
 
@@ -231,7 +231,7 @@ describe("main", () => {
 
       it("has error exit status", async () => {
         await main({});
-        expect(exit).toBeCalledWith(2);
+        expect(exit).toHaveBeenCalledWith(2);
       });
     });
   });
@@ -248,7 +248,7 @@ describe("main", () => {
     it("calls getQueueAttributes", async () => {
       await main({});
       const sqs = new AWS.SQS();
-      expect(sqs.getQueueAttributes).toBeCalledWith({
+      expect(sqs.getQueueAttributes).toHaveBeenCalledWith({
         AttributeNames: ["RedrivePolicy"],
         QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue",
       });
@@ -256,7 +256,7 @@ describe("main", () => {
 
     it("completes normally", async () => {
       await main({});
-      expect(exit).toBeCalledWith(0);
+      expect(exit).toHaveBeenCalledWith(0);
     });
 
     describe("redriving", () => {
@@ -269,7 +269,7 @@ describe("main", () => {
       it("calls sendMessage", async () => {
         await main({});
         const sqs = new AWS.SQS();
-        expect(sqs.sendMessage).toBeCalledWith({
+        expect(sqs.sendMessage).toHaveBeenCalledWith({
           MessageAttributes: {},
           MessageBody: "{}",
           QueueUrl: "https://sqs.us-east-1.amazonaws.com/000000000000/MyService-prod-MyQueue",
@@ -285,7 +285,7 @@ describe("main", () => {
 
         it("writes a log file", async () => {
           await main({});
-          expect(fs.writeFile).toBeCalledWith("prefix-123.log", "Redrive\n987");
+          expect(fs.writeFile).toHaveBeenCalledWith("prefix-123.log", "Redrive\n987");
         });
       });
     });
@@ -298,7 +298,7 @@ describe("main", () => {
       });
       it("has error exit status", async () => {
         await main({});
-        expect(exit).toBeCalledWith(2);
+        expect(exit).toHaveBeenCalledWith(2);
       });
     });
 
@@ -314,7 +314,7 @@ describe("main", () => {
       });
       it("has error exit status", async () => {
         await main({});
-        expect(exit).toBeCalledWith(2);
+        expect(exit).toHaveBeenCalledWith(2);
       });
     });
   });
